@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Login – Health Certificate</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/login.css">
+
+<!--
+  ╔══════════════════════════════════════════════════════════════╗
+  ║  AUTH STORAGE — DEVELOPER NOTE                               ║
+  ║                                                              ║
+  ║  Credentials are currently stored in localStorage under      ║
+  ║  the key "adminUsers" as an array of { username, password }  ║
+  ║  objects. Passwords are stored in plain text for now.        ║
+  ║                                                              ║
+  ║  ⚠ BEFORE GOING LIVE ON A REAL SERVER:                      ║
+  ║  Replace this entire auth system with a PHP + MySQL          ║
+  ║  backend. Specifically:                                      ║
+  ║    1. Store users in a MySQL `admin_users` table             ║
+  ║    2. Hash passwords with password_hash() (bcrypt)           ║
+  ║    3. Use PHP sessions (session_start) for auth state        ║
+  ║    4. Add CSRF tokens to the login form                      ║
+  ║    5. Rate-limit login attempts server-side                  ║
+  ║                                                              ║
+  ║  The UI/UX of this page can stay as-is — only the           ║
+  ║  backend wiring needs to change.                             ║
+  ╚══════════════════════════════════════════════════════════════╝
+-->
+
+</head>
+<body>
+
+<div class="topbar"></div>
+
+<div class="page">
+  <div class="login-wrap">
+
+    <!-- LOGO -->
+    <div class="logo-area">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+      </div>
+      <div class="logo-title">Health Certificate System</div>
+      <div class="logo-sub">Admin Portal</div>
+    </div>
+
+    <!-- LOGIN CARD -->
+    <div class="card">
+      <div class="card-title">Sign In</div>
+
+      <div class="alert alert-error" id="loginError">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span id="loginErrorMsg">Invalid username or password.</span>
+      </div>
+
+      <div class="field">
+        <label for="inputUsername">Username</label>
+        <div class="input-wrap">
+          <input type="text" id="inputUsername" placeholder="Enter your username" autocomplete="username" onkeydown="if(event.key==='Enter') doLogin()">
+          <svg class="input-icon" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="inputPassword">Password</label>
+        <div class="input-wrap">
+          <input type="password" id="inputPassword" placeholder="Enter your password" autocomplete="current-password" onkeydown="if(event.key==='Enter') doLogin()">
+          <button class="toggle-pw" type="button" onclick="togglePw('inputPassword', this)" tabindex="-1">
+            <svg id="eyeIcon" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <button class="btn-login" id="btnLogin" onclick="doLogin()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        Sign In
+      </button>
+    </div>
+
+    <!-- MANAGE USERS -->
+    <div class="divider">User Management</div>
+
+    <div class="manage-toggle">
+      <button class="btn-link" onclick="toggleManage()">Manage Admin Accounts</button>
+    </div>
+
+    <div class="manage-panel" id="managePanel">
+
+      <!-- Auth gate: must verify an existing admin before managing accounts -->
+      <div id="manageAuthGate">
+        <div class="manage-auth">
+          <div class="manage-auth-label">Enter an existing admin password to manage accounts:</div>
+          <div class="manage-auth-row">
+            <input type="password" id="gatePassword" placeholder="Admin password…" onkeydown="if(event.key==='Enter') unlockManage()">
+            <button class="btn-unlock" onclick="unlockManage()">Unlock</button>
+          </div>
+          <div class="manage-auth-err" id="gateErr">Incorrect password.</div>
+        </div>
+      </div>
+
+      <!-- Manage UI (hidden until unlocked) -->
+      <div id="manageContent" style="display:none;">
+        <div class="manage-header">
+          <div class="manage-header-title">Admin Accounts</div>
+          <button class="btn-link" style="font-size:12px;" onclick="lockManage()">Lock</button>
+        </div>
+        <div class="manage-body">
+
+          <div class="alert alert-success" id="manageSuccess">
+            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            <span id="manageSuccessMsg">Done.</span>
+          </div>
+          <div class="alert alert-error" id="manageError">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span id="manageErrorMsg">Error.</span>
+          </div>
+
+          <!-- User list -->
+          <div class="user-list" id="userList"></div>
+
+          <!-- Add user -->
+          <div class="add-user-form">
+            <div class="add-user-title">Add New Account</div>
+            <div class="add-user-grid">
+              <div class="field">
+                <label>Username</label>
+                <input type="text" id="newUsername" placeholder="e.g. jdelacruz">
+              </div>
+              <div class="field">
+                <label>Password</label>
+                <div class="input-wrap">
+                  <input type="password" id="newPassword" placeholder="Password">
+                </div>
+              </div>
+            </div>
+            <button class="btn-add-user" onclick="addUser()">+ Add Account</button>
+          </div>
+
+        </div>
+      </div>
+
+    </div><!-- /manage-panel -->
+
+  </div><!-- /login-wrap -->
+</div>
+
+<div class="footer">Health Certificate Attendance System &nbsp;·&nbsp; Admin Portal</div>
+
+<script src="js/login.js"></script>
+</body>
+</html>

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Health Certificate – Attendance Form</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/client.css">
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="header-left">
+    <div class="header-icon">
+      <svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+    </div>
+    <div>
+      <div class="header-title">Health Certificate Attendance</div>
+      <div class="header-sub">Client Registration Form</div>
+    </div>
+  </div>
+  <div class="timestamp-badge" id="liveClock">—</div>
+</header>
+
+<!-- MAIN -->
+<main class="main" id="formWrapper">
+
+  <!-- Section 2: Personal Info -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-header-num">1</div>
+      <div class="card-header-title">Personal Information</div>
+    </div>
+    <div class="card-body">
+      <div class="form-grid cols-3">
+        <div class="field">
+          <label>Last Name <span class="req">*</span></label>
+          <input type="text" id="lastName" placeholder="e.g. Dela Cruz">
+          <span class="field-error" id="err-lastName">Required</span>
+        </div>
+        <div class="field">
+          <label>First Name <span class="req">*</span></label>
+          <input type="text" id="firstName" placeholder="e.g. Juan">
+          <span class="field-error" id="err-firstName">Required</span>
+        </div>
+        <div class="field">
+          <label>Middle Name</label>
+          <input type="text" id="middleName" placeholder="e.g. Santos">
+        </div>
+      </div>
+
+      <div class="form-grid cols-2" style="margin-top:16px;">
+        <div class="field">
+          <label>Gender <span class="req">*</span></label>
+          <div class="radio-group" id="genderGroup">
+            <label class="radio-option" onclick="selectRadio('gender','Male',this)">
+              <input type="radio" name="gender" value="Male">
+              <span class="radio-dot"></span>Male
+            </label>
+            <label class="radio-option" onclick="selectRadio('gender','Female',this)">
+              <input type="radio" name="gender" value="Female">
+              <span class="radio-dot"></span>Female
+            </label>
+          </div>
+          <span class="field-error" id="err-gender">Please select gender</span>
+        </div>
+        <div class="field">
+          <label>Residential Address <span class="req">*</span></label>
+          <textarea id="residentialAddress" placeholder="House No., Street, Barangay, City/Municipality"></textarea>
+          <span class="field-error" id="err-residentialAddress">Required</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 3: Application Details -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-header-num">2</div>
+      <div class="card-header-title">Application Details</div>
+    </div>
+    <div class="card-body">
+      <div class="form-grid cols-1">
+
+        <div class="field">
+          <label>Application Type <span class="req">*</span></label>
+          <div class="radio-group" id="appTypeGroup">
+            <label class="radio-option" onclick="selectRadio('appType','New',this)">
+              <input type="radio" name="appType" value="New">
+              <span class="radio-dot"></span>New Application
+            </label>
+            <label class="radio-option" onclick="selectRadio('appType','Renewal',this)">
+              <input type="radio" name="appType" value="Renewal">
+              <span class="radio-dot"></span>Renewal
+            </label>
+          </div>
+          <span class="field-error" id="err-appType">Please select application type</span>
+        </div>
+
+        <div class="field">
+          <label>Health Certificate Type <span class="req">*</span></label>
+          <div class="radio-group" id="certTypeGroup">
+            <label class="radio-option" onclick="selectRadio('certType','Food Handler',this)">
+              <input type="radio" name="certType" value="Food Handler">
+              <span class="radio-dot"></span>Food Handler
+            </label>
+            <label class="radio-option" onclick="selectRadio('certType','Non-Food Handler',this)">
+              <input type="radio" name="certType" value="Non-Food Handler">
+              <span class="radio-dot"></span>Non-Food Handler
+            </label>
+          </div>
+          <span class="field-error" id="err-certType">Please select certificate type</span>
+        </div>
+
+        <div class="field">
+          <label>Lost Certificate? <span class="req">*</span></label>
+          <div class="toggle-group">
+            <button type="button" class="toggle-btn" id="lostYes" onclick="setToggle('lost','Yes')">Yes</button>
+            <button type="button" class="toggle-btn" id="lostNo" onclick="setToggle('lost','No')">No</button>
+          </div>
+          <span class="field-error" id="err-lost">Please indicate if certificate was lost</span>
+        </div>
+
+        <div class="field">
+          <label>Position / Role <span class="req">*</span></label>
+          <div class="radio-group" id="positionGroup">
+            <label class="radio-option" onclick="selectRadio('position','Worker',this)">
+              <input type="radio" name="position" value="Worker">
+              <span class="radio-dot"></span>Worker
+            </label>
+            <label class="radio-option" onclick="selectRadio('position','Business Owner',this)">
+              <input type="radio" name="position" value="Business Owner">
+              <span class="radio-dot"></span>Business Owner
+            </label>
+            <label class="radio-option" onclick="selectRadio('position','OJT / Student',this)">
+              <input type="radio" name="position" value="OJT / Student">
+              <span class="radio-dot"></span>OJT / Student
+            </label>
+          </div>
+          <span class="field-error" id="err-position">Please select your position</span>
+        </div>
+
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 4: Establishment -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-header-num">3</div>
+      <div class="card-header-title">Establishment Information</div>
+    </div>
+    <div class="card-body">
+      <div class="form-grid cols-1">
+        <div class="field">
+          <label>Name of Establishment <span class="req">*</span></label>
+          <input type="text" id="estabName" placeholder="e.g. Jollibee Caloocan Branch">
+          <span class="field-error" id="err-estabName">Required</span>
+        </div>
+        <div class="field">
+          <label>Address of Establishment <span class="req">*</span></label>
+          <textarea id="estabAddress" placeholder="Building/Unit No., Street, Barangay, City/Municipality"></textarea>
+          <span class="field-error" id="err-estabAddress">Required</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUBMIT -->
+  <div class="submit-bar">
+    <div class="submit-note">Fields marked <strong>*</strong> are required</div>
+    <button class="btn-submit" onclick="submitForm()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      Submit Attendance
+    </button>
+  </div>
+
+</main>
+
+<!-- DUPLICATE MODAL -->
+<div class="dup-overlay" id="dupOverlay">
+  <div class="dup-modal">
+    <div class="dup-header">
+      <div class="dup-icon">
+        <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      </div>
+      <div class="dup-header-text">
+        <div class="dup-title">Already Registered</div>
+        <div class="dup-subtitle">This name already has an existing record.</div>
+      </div>
+    </div>
+    <div class="dup-body">
+      <div class="dup-label">Existing submission</div>
+      <div class="dup-ts" id="dupTimestamp">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span id="dupTs">—</span>
+      </div>
+      <div class="dup-card">
+        <div class="dup-field full">
+          <div class="dup-field-label">Full Name</div>
+          <div class="dup-field-value" id="dupName">—</div>
+        </div>
+        <div class="dup-field">
+          <div class="dup-field-label">Application Type</div>
+          <div class="dup-field-value" id="dupAppType">—</div>
+        </div>
+        <div class="dup-field">
+          <div class="dup-field-label">Certificate Type</div>
+          <div class="dup-field-value" id="dupCertType">—</div>
+        </div>
+        <div class="dup-field full">
+          <div class="dup-field-label">Establishment</div>
+          <div class="dup-field-value" id="dupEstab">—</div>
+        </div>
+        <div class="dup-field">
+          <div class="dup-field-label">Reference No.</div>
+          <div class="dup-field-value" id="dupRef" style="font-family:'DM Mono',monospace;font-size:12px;">—</div>
+        </div>
+        <div class="dup-field">
+          <div class="dup-field-label">Status</div>
+          <div class="dup-field-value" id="dupStatus">—</div>
+        </div>
+      </div>
+      <div class="dup-question">
+        Your name is already registered in our system. If you believe this is an error, please approach the staff for assistance.
+      </div>
+    </div>
+    <div class="dup-footer" style="justify-content:center;">
+      <button class="btn-dup-back" onclick="closeDupModal()" style="flex:none;padding:10px 32px;">← Go Back</button>
+    </div>
+  </div>
+</div>
+
+<!-- SUCCESS SCREEN -->
+<div class="success-screen" id="successScreen">
+  <div class="success-icon">
+    <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+  </div>
+  <div class="success-title">Attendance Recorded!</div>
+  <div class="success-sub">Your form has been successfully submitted.</div>
+  <div class="success-ref" id="refCode"></div>
+  <button class="btn-new" onclick="resetForm()">Submit Another Entry</button>
+</div>
+
+<script src="js/client.js"></script>
+</body>
+</html>

@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin – Health Certificate Attendance</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="header-left">
+    <div class="header-logo">
+      <svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+    </div>
+    <div class="header-title">Health Certificate – Admin Panel</div>
+    <span class="header-badge">Admin</span>
+  </div>
+  <div class="header-right">
+    <div style="display:flex;align-items:center;gap:8px;color:rgba(255,255,255,0.8);font-size:13px;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span id="headerUser">—</span>
+    </div>
+    <button class="btn-header btn-ghost" onclick="exportCSV()">⬇ Export CSV</button>
+    <button class="btn-header btn-ghost" onclick="loadSampleData()">Load Sample</button>
+    <button class="btn-header" style="background:#fff;color:#1e40af;font-weight:600;" onclick="logout()">Sign Out</button>
+  </div>
+</header>
+
+<!-- TOOLBAR -->
+<div class="toolbar">
+  <div class="search-wrap">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" id="searchInput" placeholder="Search by name, establishment, ref…" oninput="renderTable()">
+  </div>
+  <select class="filter-select" id="filterStatus" onchange="renderTable()">
+    <option value="">All Status</option>
+    <option value="Pending">Pending</option>
+    <option value="Released">Released</option>
+  </select>
+  <select class="filter-select" id="filterAppType" onchange="renderTable()">
+    <option value="">All Application Types</option>
+    <option value="New">New</option>
+    <option value="Renewal">Renewal</option>
+  </select>
+  <select class="filter-select" id="filterCertType" onchange="renderTable()">
+    <option value="">All Cert Types</option>
+    <option value="Food Handler">Food Handler</option>
+    <option value="Non-Food Handler">Non-Food Handler</option>
+  </select>
+  <div class="toolbar-count" id="rowCount">0 records</div>
+  <div style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text-sub);white-space:nowrap;">
+    <span id="statusDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></span>
+    <span id="statusText">Loading…</span>
+  </div>
+  <button class="filter-select" style="cursor:pointer;padding:8px 14px;background:var(--surface);display:flex;align-items:center;gap:6px;font-size:13px;color:var(--accent-mid);border-color:var(--accent-mid);font-weight:500;" onclick="loadRecords(); showToast('Refreshed');">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+    Refresh
+  </button>
+</div>
+
+<!-- TABLE -->
+<div class="table-wrap">
+  <div class="table-scroll">
+    <table id="mainTable">
+      <thead>
+        <tr>
+          <th onclick="sortBy('timestamp')" data-col="timestamp">Timestamp <span class="sort-icon">↕</span></th>
+          <th onclick="sortBy('lastName')" data-col="lastName">Last Name <span class="sort-icon">↕</span></th>
+          <th onclick="sortBy('firstName')" data-col="firstName">First Name <span class="sort-icon">↕</span></th>
+          <th>Middle Name</th>
+          <th>Gender</th>
+          <th onclick="sortBy('applicationType')" data-col="applicationType">App Type <span class="sort-icon">↕</span></th>
+          <th>Cert Type</th>
+          <th>Client Position</th>
+          <th>Admin Position</th>
+          <th>Lost Cert</th>
+          <th onclick="sortBy('establishmentName')" data-col="establishmentName">Establishment <span class="sort-icon">↕</span></th>
+          <th>Health Cert #</th>
+          <th onclick="sortBy('status')" data-col="status">Status <span class="sort-icon">↕</span></th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+  <div class="empty-state" id="emptyState" style="display:none;">
+    <svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/><path d="M9 12h6M9 16h4"/></svg>
+    <p>No records found</p>
+  </div>
+</div>
+
+<!-- EDIT MODAL -->
+<div class="overlay" id="modalOverlay" onclick="handleOverlayClick(event)">
+  <div class="modal" id="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Edit Record</div>
+        <div class="modal-ref" id="modalRef"></div>
+      </div>
+      <button class="btn-close" onclick="closeModal()">
+        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    <div class="modal-body">
+
+      <!-- PERSONAL INFO -->
+      <div>
+        <div class="modal-section-label">Personal Information</div>
+        <div class="modal-grid modal-cols-3">
+          <div class="mfield">
+            <label>Last Name *</label>
+            <input type="text" id="m_lastName" placeholder="Last name">
+          </div>
+          <div class="mfield">
+            <label>First Name *</label>
+            <input type="text" id="m_firstName" placeholder="First name">
+          </div>
+          <div class="mfield">
+            <label>Middle Name</label>
+            <input type="text" id="m_middleName" placeholder="Middle name">
+          </div>
+          <div class="mfield">
+            <label>Gender</label>
+            <select id="m_gender">
+              <option value="">Select…</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+          </div>
+          <div class="mfield modal-span-2">
+            <label>Residential Address</label>
+            <textarea id="m_residentialAddress" rows="2"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- APPLICATION DETAILS -->
+      <div>
+        <div class="modal-section-label">Application Details</div>
+        <div class="modal-grid modal-cols-2">
+          <div class="mfield">
+            <label>Application Type</label>
+            <select id="m_applicationType">
+              <option value="">Select…</option>
+              <option value="New">New</option>
+              <option value="Renewal">Renewal</option>
+            </select>
+          </div>
+          <div class="mfield">
+            <label>Health Certificate Type</label>
+            <select id="m_healthCertificateType">
+              <option value="">Select…</option>
+              <option value="Food Handler">Food Handler</option>
+              <option value="Non-Food Handler">Non-Food Handler</option>
+            </select>
+          </div>
+          <div class="mfield">
+            <label>Lost Certificate</label>
+            <select id="m_lostCertificate">
+              <option value="">Select…</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- POSITION (CLIENT — READ ONLY) -->
+      <div>
+        <div class="modal-section-label">Client-Declared Position</div>
+        <div class="modal-grid modal-cols-1">
+          <div class="mfield">
+            <label>Position (as submitted by client)</label>
+            <div id="m_clientPosition" style="padding:9px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:6px;font-size:13.5px;color:var(--text-label);"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ESTABLISHMENT -->
+      <div>
+        <div class="modal-section-label">Establishment</div>
+        <div class="modal-grid modal-cols-1">
+          <div class="mfield">
+            <label>Name of Establishment</label>
+            <input type="text" id="m_establishmentName" placeholder="Establishment name">
+          </div>
+          <div class="mfield">
+            <label>Address of Establishment</label>
+            <textarea id="m_establishmentAddress" rows="2"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- ADMIN FIELDS -->
+      <div>
+        <div class="modal-section-label">Admin Fields</div>
+        <div class="modal-grid modal-cols-2">
+          <div class="mfield">
+            <label>Health Certificate Number</label>
+            <input type="text" id="m_healthCertNumber" placeholder="e.g. HC-2024-00001">
+          </div>
+          <div class="mfield">
+            <label>Status</label>
+            <select id="m_status">
+              <option value="Pending">Pending</option>
+              <option value="Released">Released</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- ADMIN POSITION — right after status -->
+        <div style="margin-top:16px;">
+          <label style="font-size:11.5px;font-weight:500;color:var(--text-label);display:block;margin-bottom:8px;">Admin Position Classification</label>
+          <div class="position-tags" id="positionTags"></div>
+          <div class="add-position-row">
+            <input type="text" id="newPositionInput" placeholder="Add custom position…" onkeydown="if(event.key==='Enter') addCustomPosition()">
+            <button class="btn-add-pos" onclick="addCustomPosition()">+ Add</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /modal-body -->
+
+    <div class="modal-footer">
+      <button class="btn-delete" onclick="confirmDelete()">Delete Record</button>
+      <div class="modal-footer-right">
+        <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+        <button class="btn-save" onclick="saveRecord()">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM DELETE -->
+<div class="confirm-overlay" id="confirmOverlay">
+  <div class="confirm-box">
+    <div class="confirm-icon">
+      <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+    </div>
+    <div class="confirm-title">Delete this record?</div>
+    <div class="confirm-sub">This action cannot be undone. The record will be permanently removed.</div>
+    <div class="confirm-actions">
+      <button class="btn-confirm-cancel" onclick="closeConfirm()">Cancel</button>
+      <button class="btn-confirm-del" onclick="deleteRecord()">Yes, Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast">
+  <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+  <span id="toastMsg">Saved</span>
+</div>
+
+<script src="js/admin.js"></script>
+</body>
+</html>
