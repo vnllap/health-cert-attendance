@@ -66,10 +66,6 @@ Deploy this exact structure to your GitHub repository root:
 ├── SETUP_GUIDE.md              ← Quick setup steps
 └── DOCUMENTATION.md            ← This file
 ```
-
-> **Note:** Rename `attendance-client.html` to `index.html` before uploading
-> so that `yourusername.github.io/repo-name` opens the client form directly.
-
 ---
 
 ## 3. How It Works
