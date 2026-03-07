@@ -1,4 +1,4 @@
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
     --bg: #f0f2f5;
@@ -559,4 +559,69 @@
     .modal-cols-2 { grid-template-columns: 1fr; }
     .modal-span-2 { grid-column: span 1; }
     .header { padding: 0 14px; }
+  }
+
+  /* ── VIEW TOGGLE ── */
+  .view-toggle-group {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .view-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    background: var(--surface);
+    border: none;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--text-sub);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .view-btn + .view-btn {
+    border-left: 1px solid var(--border);
+  }
+
+  .view-btn:hover {
+    background: var(--row-alt);
+    color: var(--text);
+  }
+
+  .view-btn-active {
+    background: var(--accent-light);
+    color: var(--accent-mid);
+    font-weight: 600;
+  }
+
+  .view-btn-active:hover {
+    background: var(--accent-light);
+  }
+
+  .today-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    background: var(--accent-mid);
+    color: #fff;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .view-btn:not(.view-btn-active) .today-badge {
+    background: var(--text-sub);
   }
