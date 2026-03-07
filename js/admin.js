@@ -10,6 +10,7 @@ let sortDir        = -1;
 let pollTimer      = null;
 let lastRowCount   = 0;
 let selectedAdminPosition = null;
+let viewMode       = 'today'; // 'today' | 'all'
 
 // Admin-only position options (separate from client's 3 options)
 let adminPositionOptions = [
@@ -145,15 +146,50 @@ document.addEventListener('visibilitychange', () => {
   else { loadRecords(); startPolling(); }
 });
 
+// ─── VIEW MODE TOGGLE ────────────────────────────────────────────────────
+function setViewMode(mode) {
+  viewMode = mode;
+  const btnToday = document.getElementById('btnToday');
+  const btnAll   = document.getElementById('btnAll');
+  const searchInput = document.getElementById('searchInput');
+  if (mode === 'today') {
+    btnToday.classList.add('view-btn-active');
+    btnAll.classList.remove('view-btn-active');
+    searchInput.placeholder = "Search today\'s records…";
+  } else {
+    btnAll.classList.add('view-btn-active');
+    btnToday.classList.remove('view-btn-active');
+    searchInput.placeholder = 'Search all records by name, establishment, ref…';
+  }
+  renderTable();
+}
+
+function getTodayString() {
+  const d = new Date();
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
 // ─── RENDER TABLE ─────────────────────────────────────────────────────────
 function renderTable() {
   const search         = document.getElementById('searchInput').value.toLowerCase();
   const filterStatus   = document.getElementById('filterStatus').value;
   const filterAppType  = document.getElementById('filterAppType').value;
   const filterCertType = document.getElementById('filterCertType').value;
+  const todayStr       = getTodayString();
+
+  // Update today count badge
+  const todayCount = records.filter(r => r.timestamp && r.timestamp.startsWith(todayStr)).length;
+  const todayBadge = document.getElementById('todayCountBadge');
+  if (todayBadge) todayBadge.textContent = todayCount;
 
   let filtered = records.filter((r, i) => {
     r._idx = i;
+    // Today filter: only apply when in today-mode and no active search term
+    if (viewMode === 'today' && !search) {
+      if (!r.timestamp || !r.timestamp.startsWith(todayStr)) return false;
+    }
     const text = [r.lastName, r.firstName, r.middleName,
                   r.establishmentName, r.ref].join(' ').toLowerCase();
     if (search && !text.includes(search)) return false;
@@ -171,11 +207,20 @@ function renderTable() {
 
   const tbody = document.getElementById('tableBody');
   tbody.innerHTML = '';
+  const modeLabel = viewMode === 'today' && !search ? 'today' : 'all';
   document.getElementById('rowCount').textContent =
-    filtered.length + ' record' + (filtered.length !== 1 ? 's' : '');
+    filtered.length + ' record' + (filtered.length !== 1 ? 's' : '') +
+    (viewMode === 'today' && !search ? ' · today' : '');
 
   if (filtered.length === 0) {
-    document.getElementById('emptyState').style.display = 'block';
+    const emptyEl = document.getElementById('emptyState');
+    const emptyP  = emptyEl.querySelector('p');
+    if (emptyP) {
+      emptyP.textContent = viewMode === 'today' && !search
+        ? 'No records for today yet'
+        : 'No records found';
+    }
+    emptyEl.style.display = 'block';
     return;
   }
   document.getElementById('emptyState').style.display = 'none';
