@@ -12,18 +12,21 @@
    - 4.1 [Client Registration Form](#41-client-registration-form)
    - 4.2 [Admin Login](#42-admin-login)
    - 4.3 [Admin Panel](#43-admin-panel)
+   - 4.4 [Reports](#44-reports)
 5. [Data Fields Reference](#5-data-fields-reference)
 6. [Google Sheets & Apps Script](#6-google-sheets--apps-script)
 7. [Deployment Guide (GitHub Pages)](#7-deployment-guide-github-pages)
 8. [Configuration](#8-configuration)
 9. [Duplicate Prevention](#9-duplicate-prevention)
 10. [Admin Position vs Client Position](#10-admin-position-vs-client-position)
-11. [Auto-Refresh & Polling](#11-auto-refresh--polling)
+11. [Auto-Refresh & Delta Polling](#11-auto-refresh--delta-polling)
 12. [Authentication](#12-authentication)
 13. [CSV Export](#13-csv-export)
-14. [Known Limitations & Future Improvements](#14-known-limitations--future-improvements)
-15. [Troubleshooting](#15-troubleshooting)
-16. [Changelog](#16-changelog)
+14. [Reports](#14-reports)
+15. [Concurrency & Simultaneous Submissions](#15-concurrency--simultaneous-submissions)
+16. [Known Limitations & Future Improvements](#16-known-limitations--future-improvements)
+17. [Troubleshooting](#17-troubleshooting)
+18. [Changelog](#18-changelog)
 
 ---
 
@@ -32,19 +35,17 @@
 A web-based attendance and registration system for health certificate applicants.
 Built with plain HTML, CSS, and JavaScript — no frameworks, no build tools.
 Data is stored in Google Sheets via a Google Apps Script Web App.
-The client form is hosted on GitHub Pages (free, always online).
+The client form and admin panel are hosted on GitHub Pages (free, always online).
 
 **Tech stack:**
 - Frontend: HTML5, CSS3, vanilla JavaScript
 - Storage: Google Sheets (via Apps Script)
 - Hosting: GitHub Pages (client + admin)
-- Auth: localStorage-based (to be replaced with PHP sessions)
+- Auth: localStorage-based (to be replaced with PHP sessions for production)
 
 ---
 
 ## 2. File Structure
-
-Deploy this exact structure to your GitHub repository root:
 
 ```
 /
@@ -53,19 +54,20 @@ Deploy this exact structure to your GitHub repository root:
 ├── admin-login.html            ← Admin login page
 │
 ├── css/
-│   ├── client.css              ← Styles for client form
-│   ├── admin.css               ← Styles for admin panel
-│   └── login.css               ← Styles for login page
+│   ├── client.css
+│   ├── admin.css
+│   └── login.css
 │
 ├── js/
-│   ├── client.js               ← Logic for client form
-│   ├── admin.js                ← Logic for admin panel
-│   └── login.js                ← Logic for login page
+│   ├── client.js
+│   ├── admin.js
+│   └── login.js
 │
-├── apps-script.gs              ← Paste into Google Apps Script editor
-├── SETUP_GUIDE.md              ← Quick setup steps
-└── DOCUMENTATION.md            ← This file
+├── apps-script.gs
+├── SETUP_GUIDE.md
+└── DOCUMENTATION.md
 ```
+
 ---
 
 ## 3. How It Works
@@ -73,12 +75,11 @@ Deploy this exact structure to your GitHub repository root:
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  CLIENT FORM (GitHub Pages)                             │
-│  index.html + css/client.css + js/client.js             │
 │                                                         │
-│  1. Client fills out form and hits Submit               │
-│  2. Duplicate check runs (name match, hard block)       │
-│  3. POST sent to Apps Script Web App URL                │
-│  4. Data saved to Google Sheets                         │
+│  1. Cache warm: JSONP fetch populates sheetsCache       │
+│  2. Client fills out form and hits Submit               │
+│  3. Duplicate check runs (name match, hard block)       │
+│  4. POST sent to Apps Script Web App URL                │
 │  5. Reference number shown on success screen            │
 └──────────────────────┬──────────────────────────────────┘
                        │  fetch POST (no-cors)
@@ -87,27 +88,27 @@ Deploy this exact structure to your GitHub repository root:
 │  GOOGLE APPS SCRIPT (apps-script.gs)                    │
 │                                                         │
 │  doPost()  → appends new row to Sheets                  │
-│  doGet()   → returns all records as JSON                │
+│  doGet()   → returns records as JSON (supports ?since=) │
 │  update()  → edits existing row by ref number           │
 │  delete()  → removes row by ref number                  │
+│  saveConfig() / getConfig() → custom position options   │
 └──────────────────────┬──────────────────────────────────┘
                        │  stored in
                        ▼
 ┌─────────────────────────────────────────────────────────┐
-│  GOOGLE SHEETS (Attendance tab)                         │
+│  GOOGLE SHEETS                                          │
 │  16 columns — one row per submission                    │
-│  Admin can also edit directly in Sheets as backup       │
 └──────────────────────┬──────────────────────────────────┘
-                       │  GET ?action=getAll (every 30s)
+                       │  GET ?action=getAll&since=... (every 30s)
                        ▼
 ┌─────────────────────────────────────────────────────────┐
 │  ADMIN PANEL (GitHub Pages)                             │
-│  attendance-admin.html + css/admin.css + js/admin.js    │
 │                                                         │
-│  - Auto-refreshes every 30 seconds                      │
+│  - Delta poll every 30s (only fetches new rows)         │
 │  - Click any row to open edit modal                     │
 │  - Admin fills in: Health Cert #, Status, Admin Position│
-│  - Edits are pushed back to Sheets via POST             │
+│  - Edits pushed back to Sheets via POST                 │
+│  - Monthly and daily reports with breakdowns            │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -118,22 +119,32 @@ Deploy this exact structure to your GitHub repository root:
 ### 4.1 Client Registration Form
 
 **URL:** `yourusername.github.io/repo-name` (if renamed to index.html)
-**File:** `index.html` (formerly `attendance-client.html`)
+
+**On page load:** A one-time JSONP fetch warms the local `sheetsCache` so duplicate detection works cross-device even before the admin panel has polled.
 
 **Sections:**
 1. **Personal Information** — Last name, First name, Middle name, Gender, Residential address
 2. **Application Details** — Application type, Health certificate type, Lost certificate, Position
 3. **Establishment Information** — Establishment name and address
 
+**Input limits (maxlength):**
+
+| Field | Limit |
+|---|---|
+| Last / First / Middle name | 80 characters |
+| Establishment name | 150 characters |
+| Residential address | 300 characters |
+| Establishment address | 300 characters |
+
 **Behaviors:**
-- Live clock in header (display only, not submitted)
-- Timestamp is captured silently at moment of submission
+- Live clock in header (display only)
+- Timestamp captured silently at submission
 - Required field validation with inline error messages
 - Scrolls to first error on failed submit
-- Submit button shows "Submitting…" while the POST is in flight
-- On success: shows reference number (e.g. `ATT-MM5S7RGQ`)
-- On connection failure: shows offline warning, saves to localStorage as fallback
-- "Submit Another Entry" button resets the form completely
+- Submit button shows "Submitting…" while POST is in flight
+- On success (normal): green success screen with reference number
+- On success (offline): **amber warning screen** — visually distinct, tells client to inform staff. Submission is saved locally and will sync when connection is restored.
+- Duplicate check: hard block if name already exists in system (see Section 9)
 
 **Position options (client-facing — exactly 3):**
 - Worker
@@ -143,7 +154,6 @@ Deploy this exact structure to your GitHub repository root:
 ### 4.2 Admin Login
 
 **URL:** `yourusername.github.io/repo-name/admin-login.html`
-**File:** `admin-login.html`
 
 **Features:**
 - Username + password login
@@ -151,12 +161,11 @@ Deploy this exact structure to your GitHub repository root:
 - Redirects to admin panel on successful login
 - Redirects back here if admin panel is accessed without a session
 
-**Manage Accounts section (below login card):**
-- Protected by a second password verification gate
+**Manage Accounts panel (below login card):**
+- Protected by password gate — verifies against the **current logged-in user's own password** (not just any admin password)
 - Add new admin accounts (username min 3 chars, password min 6 chars)
 - Remove existing accounts
 - Cannot remove the last account (prevents lockout)
-- Custom position options are preserved in localStorage
 
 **Default credentials (change immediately):**
 ```
@@ -167,18 +176,26 @@ Password: admin123
 ### 4.3 Admin Panel
 
 **URL:** `yourusername.github.io/repo-name/attendance-admin.html`
-**File:** `attendance-admin.html`
 
-**Toolbar:**
+**Header buttons:**
+- **Monthly Report** — opens the report modal (see Section 14)
+- **Export CSV** (split button) — primary exports all records; dropdown offers "Export current view"
+- **Sign Out**
+
+**Toolbar Row 1:**
+- Today / All Records view toggle (Today badge shows live count)
 - Search by name, establishment, or reference number
-- Filter by Status (Pending / Released)
-- Filter by Application Type (New / Renewal)
-- Filter by Certificate Type (Food Handler / Non-Food Handler)
+- Filter by Status, Application Type, Certificate Type
 - Record count display
-- Live connection status indicator (green = live, red = error, grey = offline)
+- Live connection status indicator
 - Manual Refresh button
 
+**Toolbar Row 2 (date range):**
+- From / To date pickers — work in both Today and All Records modes
+- Clear button resets both date inputs
+
 **Table columns:**
+
 | Column | Source |
 |---|---|
 | Timestamp | Client submission |
@@ -192,15 +209,19 @@ Password: admin123
 | Admin Position | Admin only |
 | Lost Cert | Client |
 | Establishment | Client |
-| Health Cert # | Admin only |
+| Health Cert # | Admin only — shows ⚠ amber warning if blank on a Released record |
 | Status | Admin (default: Pending) |
 
 **Edit Modal (click any row):**
-- All client fields are editable (for corrections)
-- Client Position is displayed read-only (cannot be changed)
+- All client fields are editable (for corrections), with same maxlength limits as the client form
+- Client Position is displayed read-only
 - Admin fields: Health Certificate Number, Status, Admin Position
+- Admin Position tag picker — custom positions sync to Sheets config tab (cross-device)
 - Delete button with confirmation dialog
-- Save pushes changes back to Google Sheets
+
+### 4.4 Reports
+
+See Section 14 for full details.
 
 ---
 
@@ -208,22 +229,22 @@ Password: admin123
 
 | Field | Key | Set By | Type |
 |---|---|---|---|
-| Reference Number | `ref` | Auto-generated | `ATT-` + base36 timestamp |
-| Timestamp | `timestamp` | Auto (submission time) | ISO 8601 string |
-| Last Name | `lastName` | Client | Text |
-| First Name | `firstName` | Client | Text |
-| Middle Name | `middleName` | Client | Text (optional) |
+| Reference Number | `ref` | Auto-generated | `ATT-` + base36 ms timestamp |
+| Timestamp | `timestamp` | Auto (submission time) | ISO 8601 |
+| Last Name | `lastName` | Client | Text (max 80) |
+| First Name | `firstName` | Client | Text (max 80) |
+| Middle Name | `middleName` | Client | Text (max 80, optional) |
 | Gender | `gender` | Client | Male / Female |
-| Residential Address | `residentialAddress` | Client | Text |
+| Residential Address | `residentialAddress` | Client | Text (max 300) |
 | Application Type | `applicationType` | Client | New / Renewal |
 | Health Cert Type | `healthCertificateType` | Client | Food Handler / Non-Food Handler |
 | Lost Certificate | `lostCertificate` | Client | Yes / No |
 | Client Position | `position` | Client | Worker / Business Owner / OJT / Student |
-| Establishment Name | `establishmentName` | Client | Text |
-| Establishment Address | `establishmentAddress` | Client | Text |
-| Health Cert Number | `healthCertNumber` | Admin | Text (e.g. HC-2024-00001) |
+| Establishment Name | `establishmentName` | Client | Text (max 150) |
+| Establishment Address | `establishmentAddress` | Client | Text (max 300) |
+| Health Cert Number | `healthCertNumber` | Admin | Text (max 50) |
 | Status | `status` | Admin | Pending / Released |
-| Admin Position | `adminPosition` | Admin | See section 10 |
+| Admin Position | `adminPosition` | Admin | See Section 10 |
 
 ---
 
@@ -231,7 +252,7 @@ Password: admin123
 
 ### Sheet Structure
 
-The Apps Script automatically creates a tab called **Attendance** with these 16 columns in order:
+The Apps Script creates a tab called **Attendance** with 16 columns:
 
 ```
 ref | timestamp | lastName | firstName | middleName | gender |
@@ -240,70 +261,35 @@ lostCertificate | position | establishmentName | establishmentAddress |
 healthCertNumber | status | adminPosition
 ```
 
-Row 1 is the header, frozen and styled (blue background, white text).
-Each subsequent row is one submission.
+Row 1 is the header, frozen and styled. Each subsequent row is one submission.
 
 ### Apps Script Actions
 
-The Web App handles 4 actions:
-
 | Action | Method | Description |
 |---|---|---|
-| `getAll` | GET `?action=getAll` | Returns all rows as JSON array |
+| `getAll` | GET `?action=getAll` | Returns all rows. Supports optional `?since=ISO` for delta polling. |
 | `submit` | POST `{ action:'submit', data:{...} }` | Appends new row |
-| `update` | POST `{ action:'update', data:{...} }` | Updates row matching `ref` |
-| `delete` | POST `{ action:'delete', ref:'...' }` | Deletes row matching `ref` |
+| `update` | POST `{ action:'update', data:{...} }` | Updates row by `ref` |
+| `delete` | POST `{ action:'delete', ref:'...' }` | Deletes row by `ref` |
+| `saveConfig` | POST `{ action:'saveConfig', key, value }` | Saves config (e.g. custom positions) |
+| `getConfig` | GET `?action=getConfig` | Returns config values |
 
 ### Re-deploying After Changes
 
-> ⚠️ Every time you edit the Apps Script code, you must create a **New Deployment**
-> (not update existing). Copy the new URL and update both `client.js` and `admin.js`.
+Every time you edit the Apps Script, create a **New Deployment** and update the URL in both `client.js` and `admin.js`.
 
 ---
 
 ## 7. Deployment Guide (GitHub Pages)
 
-### Step 1 — Google Sheet
-1. Create a blank Google Sheet at [sheets.google.com](https://sheets.google.com)
-2. Name it (e.g. "Health Certificate Attendance")
+See `SETUP_GUIDE.md` for the full step-by-step guide.
 
-### Step 2 — Apps Script
-1. In the sheet: **Extensions → Apps Script**
-2. Delete placeholder code
-3. Paste the entire contents of `apps-script.gs`
-4. Click Save
-
-### Step 3 — Deploy Web App
-1. **Deploy → New deployment**
-2. Type: **Web app**
-3. Execute as: **Me**
-4. Who has access: **Anyone**
-5. Click **Deploy**
-6. Copy the URL (looks like `https://script.google.com/macros/s/ABC.../exec`)
-
-### Step 4 — Add URL to JS files
-In both `js/client.js` and `js/admin.js`, replace:
-```js
-const APPS_SCRIPT_URL = 'YOUR_APPS_SCRIPT_URL_HERE';
-```
-with your actual URL.
-
-### Step 5 — GitHub Pages
-1. Create a public GitHub repository
-2. Upload all files maintaining the folder structure
-3. Rename `attendance-client.html` → `index.html`
-4. Go to **Settings → Pages → Source: main branch / root**
-5. Wait ~60 seconds, then visit your Pages URL
-
-### Step 6 — Verify
-1. Submit a test entry from the client form
-2. Check Google Sheets — new row in **Attendance** tab
-3. Open admin panel — entry should appear within 30 seconds
-4. Open admin panel URL in browser:
-   ```
-   https://script.google.com/.../exec?action=getAll
-   ```
-   Should return `{"records":[{...}]}`
+Quick summary:
+1. Create Google Sheet
+2. Paste `apps-script.gs` into Apps Script editor, deploy as Web App (Anyone access)
+3. Paste the Web App URL into `js/client.js` and `js/admin.js`
+4. Upload all files to a public GitHub repo, enable Pages from root of main branch
+5. Rename `attendance-client.html` → `index.html`
 
 ---
 
@@ -313,19 +299,20 @@ with your actual URL.
 
 In `js/admin.js` line 3:
 ```js
-const POLL_INTERVAL = 30000; // milliseconds — 30 seconds default
+const POLL_INTERVAL = 30000; // milliseconds
 ```
-Change to `10000` for 10 seconds, `60000` for 1 minute, etc.
 
 ### Poll Quota Estimate (Google free tier: 20,000 reads/day)
 
+With delta polling, each poll after the first returns only new rows — actual data transferred is much smaller than a full fetch. The quota figures below are for request count, not data size.
+
 | Interval | 1 Panel | 4 Panels (8hr active) |
 |---|---|---|
-| 10 seconds | 28,800/day | 11,520/day ✅ |
-| 30 seconds | 9,600/day | 3,840/day ✅ |
-| 60 seconds | 4,800/day | 1,920/day ✅ |
+| 10 seconds | 2,880/day | 11,520/day ✅ |
+| 30 seconds | 960/day | 3,840/day ✅ |
+| 60 seconds | 480/day | 1,920/day ✅ |
 
-Note: Polling auto-pauses when the browser tab is hidden.
+Polling auto-pauses when the browser tab is hidden.
 
 ---
 
@@ -333,35 +320,24 @@ Note: Polling auto-pauses when the browser tab is hidden.
 
 ### How it works
 
-When a client submits, their name is checked against:
+When a client submits, the system checks for an existing name match against:
 
-1. **`submittedKeys`** in localStorage — a list of `lastName|firstName|middleName` keys from this device
-2. **`sheetsCache`** in localStorage — a cached copy of all Sheets records (updated by the admin panel's auto-poll, or when the client form saves locally)
+1. **`submittedKeys`** in localStorage — a list of `lastName|firstName|middleName` keys from this device's past submissions
+2. **`sheetsCache`** in localStorage — a cached copy of all Sheets records
 
-If a match is found, the submission is **hard blocked** — a modal shows the existing entry details and the client cannot proceed. They are directed to speak with staff.
+If a match is found, submission is **hard blocked** — a modal shows the existing entry and the client cannot proceed. They are directed to speak with staff.
 
-### Scope
+### Cross-device detection
 
-- Permanent block — not limited to same-day
-- Case-insensitive, trims whitespace
-- Cross-device detection works if the `sheetsCache` has been populated (requires admin panel to have polled at least once on the same browser, OR the submission was made from the same device)
-- For full cross-device duplicate prevention, a PHP + MySQL backend with server-side name lookup is recommended
+On page load, the client form performs a one-time JSONP fetch to warm the `sheetsCache` from the live Sheets data. This means a client who previously submitted on a different device or kiosk will still be caught by the duplicate check, even if this device has never seen their record before.
 
 ### What the duplicate modal shows
 
-- Timestamp of original submission
-- Full name
-- Application type
-- Certificate type
-- Establishment name
-- Reference number
-- Status (Pending / Released)
+Timestamp, full name, application type, certificate type, establishment name, reference number, and status.
 
 ---
 
 ## 10. Admin Position vs Client Position
-
-The system uses two separate position fields to keep client data clean and auditable:
 
 | | Client Position (`position`) | Admin Position (`adminPosition`) |
 |---|---|---|
@@ -369,139 +345,197 @@ The system uses two separate position fields to keep client data clean and audit
 | **Options** | Worker, Business Owner, OJT/Student | Manual, Workpass, Business Owner, OJT/Student, Night Market, Replacement, Government, + custom |
 | **Editable by admin** | No (read-only display) | Yes |
 | **Purpose** | What the client declared | How admin classifies for processing |
-| **Shown in table** | ✅ Client Position column | ✅ Admin Position column |
 
-Admins can add custom position types via the **+ Add** field in the edit modal. Custom positions are saved to `localStorage` and persist across sessions on the same browser.
+Custom admin positions are saved to both localStorage and the Sheets Config tab (via `saveConfig` action), so they persist across devices and browsers. If the Apps Script doesn't support `saveConfig`/`getConfig`, it falls back to localStorage only.
 
 ---
 
-## 11. Auto-Refresh & Polling
+## 11. Auto-Refresh & Delta Polling
 
-The admin panel fetches fresh data from Google Sheets every **30 seconds**.
+The admin panel refreshes data from Google Sheets every **30 seconds**.
 
-**Smart behaviors:**
-- Pauses automatically when the browser tab is hidden or minimized
-- Resumes and fetches immediately when the tab becomes visible again
+### Delta polling
+
+After the first full fetch, each subsequent poll sends `?since=LAST_POLL_TIMESTAMP`. The Apps Script returns only rows with a timestamp at or after that value. New/updated rows are merged into the local array by `ref` — existing records are updated, new ones are added.
+
+A manual **Refresh** button always triggers a full fetch (`forceFull=true`) to ensure nothing is missed.
+
+### Smart behaviors
+- Pauses automatically when the browser tab is hidden
+- Resumes and fetches immediately when the tab becomes visible
 - Shows a toast notification when new entries are detected
-- Connection status indicator in toolbar:
-  - 🟢 Green dot = "Live · updates every 30s"
-  - 🟡 Yellow dot = "Loading…"
-  - 🔴 Red dot = "Connection error — retrying"
-  - ⚫ Grey dot = "Offline mode (localStorage)"
-
-**Manual refresh:** Click the **Refresh** button in the toolbar at any time.
+- Connection status indicator: 🟢 Live / 🟡 Loading / 🔴 Error / ⚫ Offline
 
 ---
 
 ## 12. Authentication
 
-> ⚠️ Current implementation uses localStorage — suitable for internal use only.
-> For public-facing admin panels, migrate to PHP sessions (see section 14).
+> ⚠️ Current implementation uses localStorage — suitable for internal/intranet use only. For internet-facing deployments, migrate to PHP sessions.
 
-### How it works now
+### How it works
 
 - Users stored in `localStorage['adminUsers']` as `[{ username, password }]`
 - Session stored in `localStorage['adminSession']` as `{ username, loginTime }`
 - Admin panel checks for session on load — redirects to login if missing
-- Logout clears the session key
+- The "Manage Accounts" gate verifies the **current logged-in user's own password**, not just any admin password in the list
 
 ### Security notes
 
-- Passwords stored in plain text — acceptable for closed internal use
+- Passwords stored in plain text — acceptable for closed internal use on a trusted local network
 - Anyone with browser dev tools access can read localStorage
-- Do not use this for internet-facing systems with sensitive data
-
-### Migrating to PHP (future)
-
-Replace the auth section in `js/login.js` and `js/admin.js` with:
-```js
-// Login
-fetch('/api/login.php', { method:'POST', body: formData })
-
-// Auth check
-fetch('/api/auth.php').then(r => r.json()).then(d => {
-  if (!d.loggedIn) window.location.href = 'admin-login.html';
-})
-
-// Logout
-fetch('/api/logout.php', { method:'POST' })
-```
+- Do not use for internet-facing systems handling sensitive personal data without migrating to PHP + MySQL
 
 ---
 
 ## 13. CSV Export
 
-Click **⬇ Export CSV** in the admin panel header to download all current records.
+The **Export CSV** button in the admin panel header is a split button:
+
+- **Primary (Export CSV)** — downloads all records regardless of current filters
+- **Dropdown → Export current view** — downloads only the rows currently visible in the table (respects all active filters, search, date range, and Today/All mode)
+
+Files are named:
+- `attendance_all_YYYY-MM-DD.csv`
+- `attendance_filtered_YYYY-MM-DD.csv`
 
 **Columns exported:**
-Ref, Timestamp, Last Name, First Name, Middle Name, Gender,
-Residential Address, Application Type, Health Cert Type, Lost Certificate,
-Client Position, Admin Position, Establishment Name, Establishment Address,
-Health Cert Number, Status
-
-The file is named `attendance_YYYY-MM-DD.csv` using today's date.
-Filtered/searched records are NOT what exports — the full dataset always exports.
+Ref, Timestamp, Last Name, First Name, Middle Name, Gender, Residential Address, Application Type, Health Cert Type, Lost Certificate, Client Position, Admin Position, Establishment Name, Establishment Address, Health Cert Number, Status
 
 ---
 
-## 14. Known Limitations & Future Improvements
+## 14. Reports
 
-### Current limitations
+Click **Monthly Report** in the admin panel header. The modal has a **Monthly / Daily** mode toggle.
+
+### Monthly Report
+
+Select a month and year, click Generate.
+
+**Summary cards:** Total Applications · Released · Pending · Release Rate (%)
+
+**Breakdown tables** (each shows Total / Released / Pending / Release Rate with a progress bar):
+- By Certificate Type
+- By Application Type
+- By Client Position
+- By Gender
+- Weekly Breakdown (Week 1: days 1–7, Week 2: 8–14, Week 3: 15–21, Week 4: 22–31)
+
+**Export:** Downloads `report_january_2025.csv` (all raw records for that month)
+
+### Daily Report
+
+Select a specific date, click Generate.
+
+**Summary cards:** Same four cards as monthly.
+
+**Breakdown tables:**
+- By Certificate Type
+- By Application Type
+- By Client Position
+- By Gender
+- By Hour of Day — groups submissions by the hour they arrived (e.g. `09:00–09:59`)
+- All Applicants This Day — a full numbered list sorted by submission time, showing name, cert type, app type, position, establishment, health cert #, and status. Released records missing a cert number show a ⚠ amber warning.
+
+**Export:** Downloads `report_daily_2025-03-10.csv`
+
+Both modes show a clean empty state if no records exist for the selected period.
+
+---
+
+## 15. Concurrency & Simultaneous Submissions
+
+The system handles multiple clients submitting at the same time safely.
+
+**Client submissions are fully concurrent-safe:**
+- Reference numbers use millisecond-precision timestamps — two clients submitting at the same minute but different milliseconds get different refs
+- Google Sheets `appendRow()` is atomic — each POST independently appends a new row; Sheets queues concurrent appends internally without conflict
+- The duplicate check is name-based, not time-based — two different people submitting simultaneously both go through fine
+
+**Admin edits:**
+- The `update` action finds a row by `ref` and overwrites it (last-write-wins)
+- In this system's workflow, each admin handles only the client physically in front of them — so two admins editing the same record simultaneously is not a real-world scenario
+- This is a non-issue for this use case
+
+**High load:**
+- The Apps Script free tier handles up to 30 concurrent requests comfortably for a walk-in counter scenario
+- The only realistic bottleneck at very high volume would be the 20,000 read requests/day quota, which delta polling significantly reduces
+
+---
+
+## 16. Known Limitations & Future Improvements
 
 | Limitation | Impact | Recommended Fix |
 |---|---|---|
 | localStorage auth | Passwords readable in dev tools | Migrate to PHP + MySQL sessions |
-| Full dataset fetch on every poll | Slow at 30k+ records | Add server-side pagination |
-| Cross-device duplicate check | Only works if sheetsCache is warm | Server-side name lookup on submit |
-| No offline queue | Submissions lost if network fails during submit | IndexedDB queue with retry |
-| Apps Script quotas | 20,000 reads/day free tier | Google Workspace or PHP backend |
-| Single Apps Script file | No version control for backend | Move to PHP |
+| Cross-device duplicate check relies on cache warm | If JSONP warm fails (network down), cross-device dup check may miss | Server-side name lookup on submit (PHP) |
+| `update` / `delete` do linear sheet scan | Slow at very large row counts | Index by ref or migrate to MySQL |
+| Custom positions fall back to localStorage if Apps Script config actions absent | Positions don't sync cross-device | Implement `saveConfig`/`getConfig` in Apps Script |
+| Apps Script 20,000 reads/day free quota | Delta polling reduces this significantly; still a limit at scale | Google Workspace or PHP backend |
+| No offline submission queue | Submissions lost if network fails mid-POST | IndexedDB queue with retry |
 
 ### Recommended next steps (in priority order)
 
-1. **PHP + MySQL backend** — replaces Apps Script + localStorage auth in one go
-2. **Pagination** — load 100 records at a time in admin, with page controls
-3. **Date range filter** — admin default view shows only today's submissions
-4. **Server-side duplicate check** — POST to PHP endpoint that queries MySQL before accepting submission
-5. **Print/receipt view** — client gets a printable confirmation after submission
+1. **Implement `?since=` and config actions in Apps Script** — unlocks delta polling and cross-device position sync with no infrastructure changes
+2. **PHP + MySQL backend** — replaces Apps Script + localStorage auth in one go
+3. **Server-side duplicate check** — POST to PHP that queries MySQL before accepting submission
+4. **Print/receipt view** — printable confirmation for the client after submission
 
 ---
 
-## 15. Troubleshooting
+## 17. Troubleshooting
 
 | Problem | Likely Cause | Fix |
 |---|---|---|
 | 404 on GitHub Pages root | No `index.html` | Rename `attendance-client.html` to `index.html` |
-| Sheet tab is empty | Wrong tab name | Look for **Attendance** tab, not Sheet1 |
-| Admin shows no records | URL not set in `admin.js` | Paste Apps Script URL in `js/admin.js` line 3 |
-| Submissions not in Sheets | URL not set in `client.js` | Paste Apps Script URL in `js/client.js` line 3 |
-| Apps Script access error | Wrong deployment settings | Set "Who has access" to **Anyone**, not "Anyone with Google account" |
-| `{"ok":true}` but no new column | Old deployment active | Create **New Deployment** after editing script — do not update existing |
-| Admin login not working | Default creds changed / localStorage cleared | Open browser dev tools → Application → Local Storage → delete `adminUsers` key to reset |
-| Duplicate check not working cross-device | sheetsCache not populated | Expected behavior — full fix requires PHP backend |
-| Position tags not showing in modal | Custom positions lost | localStorage was cleared — re-add via + Add field |
+| Sheet tab is empty | Wrong tab name | Look for **Attendance** tab |
+| Admin shows no records | URL not set in `admin.js` | Paste Apps Script URL in `js/admin.js` |
+| Submissions not in Sheets | URL not set in `client.js` | Paste Apps Script URL in `js/client.js` |
+| Apps Script access error | Wrong deployment settings | Set "Who has access" to **Anyone** |
+| `{"ok":true}` but no new column | Old deployment active | Create **New Deployment**, update URL in both JS files |
+| Admin login not working | Default creds changed / localStorage cleared | Open dev tools → Application → Local Storage → delete `adminUsers` key to reset |
+| Duplicate check not catching cross-device submissions | JSONP cache warm failed on load | Check network; if Apps Script URL is correct, it will retry on next page load |
+| Custom positions not persisting across devices | `saveConfig` not in Apps Script | Implement config actions in Apps Script, or accept localStorage-only behavior |
+| Delta polling not working | `?since=` not supported in Apps Script | Implement it in Apps Script; system falls back to full fetch in the meantime |
 | CORS errors in console | Normal for no-cors fetch | Not an error — data still submits. Ignore. |
+| Missing cert ⚠ showing in table/report | Record set to Released with no Health Cert # | Open the record, fill in the Health Cert Number, save |
 
 ---
 
-## 16. Changelog
+## 18. Changelog
 
 ### Current Version
-- **Dual position fields** — client position (3 options, read-only in admin) and admin position (7 + custom options)
-- **Hard duplicate block** — permanent name-match block, no bypass option for clients
-- **Google Sheets integration** — Apps Script Web App handles all CRUD
-- **Auto-poll** — admin refreshes every 30 seconds, pauses on hidden tab
-- **Multi-user admin auth** — localStorage-based, password-gated account management
-- **Separated CSS/JS** — clean file structure for maintainability
-- **GitHub Pages ready** — static files, no server required for hosting
+
+**Reports**
+- Monthly Report modal with summary stat cards (total, released, pending, release rate)
+- Breakdowns by certificate type, application type, client position, gender
+- Monthly mode includes weekly breakdown (weeks 1–4)
+- Daily Report mode — select any single date
+- Daily mode includes hourly breakdown and full applicant list for the day
+- Monthly / Daily toggle within a single modal
+- Export Report CSV for both modes
+
+**Admin panel improvements**
+- Delta polling — sends `?since=LAST_POLL_TIMESTAMP`; merges only new/updated rows
+- Date range filter (From / To) in toolbar row 2
+- Sorted column highlight persists through filter and search changes
+- Missing Health Cert # warning (⚠ amber) on Released records in table and daily report
+- Custom admin positions sync to Sheets config tab (cross-device)
+- Split CSV export: all records or current filtered view
+
+**Client form improvements**
+- Cross-device duplicate detection via JSONP cache warm on page load
+- Amber offline warning state on success screen (visually distinct from normal green)
+- `maxlength` on all text inputs and textareas
+
+**Auth improvements**
+- `unlockManage()` gate now verifies against the current logged-in user's own password (security fix)
 
 ### Previous changes
 - Added `adminPosition` column (separate from client-declared `position`)
 - Removed "Submit Anyway" from duplicate modal
-- Fixed sticky table header (overflow context issue)
-- Fixed "No" toggle button highlight (was invisible)
+- Fixed sticky table header overflow context
 - Added live connection status dot to admin toolbar
-- Reduced poll interval to 30s (from 10s) for quota safety
-- Removed timestamp display from client form (still captured silently)
+- Reduced poll interval to 30s for quota safety
 - Separated HTML / CSS / JS into individual files
-
+- Added Today / All Records view toggle
+- Added Today badge count
