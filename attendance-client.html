@@ -26,7 +26,7 @@
 <!-- MAIN -->
 <main class="main" id="formWrapper">
 
-  <!-- Section 2: Personal Info -->
+  <!-- Section 1: Personal Info -->
   <div class="card">
     <div class="card-header">
       <div class="card-header-num">1</div>
@@ -36,17 +36,17 @@
       <div class="form-grid cols-3">
         <div class="field">
           <label>Last Name <span class="req">*</span></label>
-          <input type="text" id="lastName" placeholder="e.g. Dela Cruz">
+          <input type="text" id="lastName" placeholder="e.g. Dela Cruz" maxlength="80">
           <span class="field-error" id="err-lastName">Required</span>
         </div>
         <div class="field">
           <label>First Name <span class="req">*</span></label>
-          <input type="text" id="firstName" placeholder="e.g. Juan">
+          <input type="text" id="firstName" placeholder="e.g. Juan" maxlength="80">
           <span class="field-error" id="err-firstName">Required</span>
         </div>
         <div class="field">
           <label>Middle Name</label>
-          <input type="text" id="middleName" placeholder="e.g. Santos">
+          <input type="text" id="middleName" placeholder="e.g. Santos" maxlength="80">
         </div>
       </div>
 
@@ -67,14 +67,14 @@
         </div>
         <div class="field">
           <label>Residential Address <span class="req">*</span></label>
-          <textarea id="residentialAddress" placeholder="House No., Street, Barangay, City/Municipality"></textarea>
+          <textarea id="residentialAddress" placeholder="House No., Street, Barangay, City/Municipality" maxlength="300"></textarea>
           <span class="field-error" id="err-residentialAddress">Required</span>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Section 3: Application Details -->
+  <!-- Section 2: Application Details -->
   <div class="card">
     <div class="card-header">
       <div class="card-header-num">2</div>
@@ -141,12 +141,11 @@
           <span class="field-error" id="err-position">Please select your position</span>
         </div>
 
-
       </div>
     </div>
   </div>
 
-  <!-- Section 4: Establishment -->
+  <!-- Section 3: Establishment -->
   <div class="card">
     <div class="card-header">
       <div class="card-header-num">3</div>
@@ -156,12 +155,12 @@
       <div class="form-grid cols-1">
         <div class="field">
           <label>Name of Establishment <span class="req">*</span></label>
-          <input type="text" id="estabName" placeholder="e.g. Jollibee, Mcdonald's, City Market">
+          <input type="text" id="estabName" placeholder="e.g. Jollibee, Mcdonald's, City Market" maxlength="150">
           <span class="field-error" id="err-estabName">Required</span>
         </div>
         <div class="field">
           <label>Address of Establishment <span class="req">*</span></label>
-          <textarea id="estabAddress" placeholder="Building/Unit No., Street, Barangay, City/Municipality"></textarea>
+          <textarea id="estabAddress" placeholder="Building/Unit No., Street, Barangay, City/Municipality" maxlength="300"></textarea>
           <span class="field-error" id="err-estabAddress">Required</span>
         </div>
       </div>
