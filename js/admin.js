@@ -1,25 +1,29 @@
 // ─── CONFIG ──────────────────────────────────────────────────────────────
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyUbQGYc6kaMGX91JQKgWuGD4CEw2BYjovL-0vO64BJHMbajE1GpioTvvkTbfceFK6l/exec';
-const POLL_INTERVAL   = 30000; // 30 seconds (safe for free quota with 4 panels)
+const POLL_INTERVAL   = 30000;
 
 // ─── DATA ────────────────────────────────────────────────────────────────
 let records        = [];
+let filteredCache  = []; // last filtered result — used by export current view
 let editingIdx     = null;
 let sortCol        = 'timestamp';
 let sortDir        = -1;
 let pollTimer      = null;
 let lastRowCount   = 0;
+let lastPollTime   = null; // ISO string — used for delta polling
 let selectedAdminPosition = null;
 let viewMode       = 'today'; // 'today' | 'all'
 
-// Admin-only position options (separate from client's 3 options)
 let adminPositionOptions = [
   'Manual', 'Workpass', 'Business Owner',
   'OJT / Student', 'Night Market', 'Replacement', 'Government'
 ];
 
-// ─── FETCH FROM GOOGLE SHEETS (JSONP — bypasses CORS on GET) ─────────────
-function loadRecords() {
+// ─── FETCH FROM GOOGLE SHEETS (JSONP) ────────────────────────────────────
+// Supports delta polling: passes ?since=ISO_TIMESTAMP so Apps Script
+// can return only new/updated rows, then merges them into the local array.
+// Falls back to full fetch if lastPollTime is null (first load).
+function loadRecords(forceFull = false) {
   setConnectionStatus('loading');
 
   if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
@@ -30,10 +34,6 @@ function loadRecords() {
     return;
   }
 
-  // Use JSONP (script tag injection) instead of fetch to avoid CORS blocking.
-  // Apps Script GET requests cannot use fetch from external origins —
-  // the browser blocks it with "No Access-Control-Allow-Origin header".
-  // JSONP works by injecting a <script> tag which is not subject to CORS.
   const callbackName = '_gsCallback_' + Date.now();
   const script = document.createElement('script');
   const timeout = setTimeout(() => {
@@ -49,12 +49,22 @@ function loadRecords() {
       const incoming = data.records;
       incoming.forEach(ensureAdminFields);
 
-      if (lastRowCount > 0 && incoming.length > lastRowCount) {
-        const diff = incoming.length - lastRowCount;
+      if (forceFull || !lastPollTime) {
+        // Full replace on first load or forced refresh
+        records = incoming;
+      } else {
+        // Delta merge: update/insert incoming rows by ref, keep the rest
+        const refMap = new Map(records.map(r => [r.ref, r]));
+        incoming.forEach(r => refMap.set(r.ref, r));
+        records = Array.from(refMap.values());
+      }
+
+      if (lastRowCount > 0 && records.length > lastRowCount) {
+        const diff = records.length - lastRowCount;
         showToast(`${diff} new entr${diff === 1 ? 'y' : 'ies'} received`);
       }
-      lastRowCount = incoming.length;
-      records = incoming;
+      lastRowCount = records.length;
+      lastPollTime = new Date().toISOString();
       localStorage.setItem('sheetsCache', JSON.stringify(records));
       renderTable();
       setConnectionStatus('live');
@@ -76,7 +86,13 @@ function loadRecords() {
     setConnectionStatus('error');
   };
 
-  script.src = APPS_SCRIPT_URL + '?action=getAll&callback=' + callbackName;
+  // Pass ?since= for delta polling; Apps Script should honour this parameter
+  // and return only rows with timestamp >= since (or all rows if absent)
+  const sinceParam = (!forceFull && lastPollTime)
+    ? '&since=' + encodeURIComponent(lastPollTime)
+    : '';
+
+  script.src = APPS_SCRIPT_URL + '?action=getAll&callback=' + callbackName + sinceParam;
   document.head.appendChild(script);
 }
 
@@ -116,6 +132,64 @@ function deleteRecordFromSheets(ref) {
   });
 }
 
+// ─── SAVE/LOAD CUSTOM POSITION OPTIONS (Sheets config tab) ──────────────
+// Custom positions are pushed to a Sheets "Config" tab via the Apps Script
+// and fetched on load, so they survive across devices and browsers.
+// Falls back to localStorage if the endpoint is unavailable.
+function saveCustomPositionsRemote() {
+  if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
+    localStorage.setItem('adminPositionOptions', JSON.stringify(adminPositionOptions));
+    return;
+  }
+  // Persist locally immediately for snappy UI
+  localStorage.setItem('adminPositionOptions', JSON.stringify(adminPositionOptions));
+  // Also push to Sheets config tab (fire-and-forget)
+  fetch(APPS_SCRIPT_URL, {
+    method: 'POST', mode: 'no-cors',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ action: 'saveConfig', key: 'adminPositionOptions', value: adminPositionOptions })
+  }).catch(() => {});
+}
+
+function loadCustomPositionsRemote() {
+  if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
+    const saved = localStorage.getItem('adminPositionOptions');
+    if (saved) adminPositionOptions = JSON.parse(saved);
+    return;
+  }
+
+  // Use local cache immediately so the UI isn't blank while waiting
+  const saved = localStorage.getItem('adminPositionOptions');
+  if (saved) adminPositionOptions = JSON.parse(saved);
+
+  // Then try to fetch from Sheets config tab
+  const callbackName = '_cfgCallback_' + Date.now();
+  const script = document.createElement('script');
+  const timeout = setTimeout(() => {
+    cleanup();
+  }, 5000);
+
+  window[callbackName] = function(data) {
+    cleanup();
+    try {
+      if (data && Array.isArray(data.adminPositionOptions)) {
+        adminPositionOptions = data.adminPositionOptions;
+        localStorage.setItem('adminPositionOptions', JSON.stringify(adminPositionOptions));
+      }
+    } catch(e) {}
+  };
+
+  function cleanup() {
+    clearTimeout(timeout);
+    delete window[callbackName];
+    if (script.parentNode) script.parentNode.removeChild(script);
+  }
+
+  script.onerror = cleanup;
+  script.src = APPS_SCRIPT_URL + '?action=getConfig&callback=' + callbackName;
+  document.head.appendChild(script);
+}
+
 // ─── CONNECTION STATUS ───────────────────────────────────────────────────
 function setConnectionStatus(state) {
   const dot  = document.getElementById('statusDot');
@@ -135,7 +209,7 @@ function setConnectionStatus(state) {
 // ─── AUTO-POLL ────────────────────────────────────────────────────────────
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(loadRecords, POLL_INTERVAL);
+  pollTimer = setInterval(() => loadRecords(false), POLL_INTERVAL);
 }
 function stopPolling() {
   if (pollTimer) clearInterval(pollTimer);
@@ -143,7 +217,7 @@ function stopPolling() {
 }
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) stopPolling();
-  else { loadRecords(); startPolling(); }
+  else { loadRecords(false); startPolling(); }
 });
 
 // ─── VIEW MODE TOGGLE ────────────────────────────────────────────────────
@@ -155,7 +229,7 @@ function setViewMode(mode) {
   if (mode === 'today') {
     btnToday.classList.add('view-btn-active');
     btnAll.classList.remove('view-btn-active');
-    searchInput.placeholder = "Search today\'s records…";
+    searchInput.placeholder = "Search today's records…";
   } else {
     btnAll.classList.add('view-btn-active');
     btnToday.classList.remove('view-btn-active');
@@ -171,12 +245,20 @@ function getTodayString() {
     String(d.getDate()).padStart(2, '0');
 }
 
+// ─── DATE RANGE HELPERS ──────────────────────────────────────────────────
+function getDateRange() {
+  const from = document.getElementById('filterDateFrom')?.value || '';
+  const to   = document.getElementById('filterDateTo')?.value   || '';
+  return { from, to };
+}
+
 // ─── RENDER TABLE ─────────────────────────────────────────────────────────
 function renderTable() {
   const search         = document.getElementById('searchInput').value.toLowerCase();
   const filterStatus   = document.getElementById('filterStatus').value;
   const filterAppType  = document.getElementById('filterAppType').value;
   const filterCertType = document.getElementById('filterCertType').value;
+  const { from, to }   = getDateRange();
   const todayStr       = getTodayString();
 
   // Update today count badge
@@ -186,10 +268,19 @@ function renderTable() {
 
   let filtered = records.filter((r, i) => {
     r._idx = i;
-    // Today filter: only apply when in today-mode and no active search term
-    if (viewMode === 'today' && !search) {
+
+    // Today filter
+    if (viewMode === 'today' && !search && !from && !to) {
       if (!r.timestamp || !r.timestamp.startsWith(todayStr)) return false;
     }
+
+    // Date range filter (applies in all view modes when set)
+    if (from || to) {
+      const rowDate = r.timestamp ? r.timestamp.slice(0, 10) : '';
+      if (from && rowDate < from) return false;
+      if (to   && rowDate > to)   return false;
+    }
+
     const text = [r.lastName, r.firstName, r.middleName,
                   r.establishmentName, r.ref].join(' ').toLowerCase();
     if (search && !text.includes(search)) return false;
@@ -205,18 +296,26 @@ function renderTable() {
     return av < bv ? -sortDir : av > bv ? sortDir : 0;
   });
 
+  // Store filtered result for "export current view"
+  filteredCache = filtered;
+
   const tbody = document.getElementById('tableBody');
   tbody.innerHTML = '';
-  const modeLabel = viewMode === 'today' && !search ? 'today' : 'all';
+
   document.getElementById('rowCount').textContent =
     filtered.length + ' record' + (filtered.length !== 1 ? 's' : '') +
-    (viewMode === 'today' && !search ? ' · today' : '');
+    (viewMode === 'today' && !search && !from && !to ? ' · today' : '');
+
+  // Re-apply sorted column highlight (fixes reset bug on filter change)
+  document.querySelectorAll('th').forEach(th => th.classList.remove('sorted'));
+  const sortedTh = document.querySelector(`th[data-col="${sortCol}"]`);
+  if (sortedTh) sortedTh.classList.add('sorted');
 
   if (filtered.length === 0) {
     const emptyEl = document.getElementById('emptyState');
     const emptyP  = emptyEl.querySelector('p');
     if (emptyP) {
-      emptyP.textContent = viewMode === 'today' && !search
+      emptyP.textContent = viewMode === 'today' && !search && !from && !to
         ? 'No records for today yet'
         : 'No records found';
     }
@@ -235,6 +334,13 @@ function renderTable() {
       ? `<span class="badge badge-released"><span class="badge-dot"></span>Released</span>`
       : `<span class="badge badge-pending"><span class="badge-dot"></span>Pending</span>`;
 
+    // Flag records that are Released but missing a Health Cert Number
+    const certNumDisplay = r.healthCertNumber
+      ? esc(r.healthCertNumber)
+      : (r.status === 'Released'
+          ? '<span class="missing-cert" title="Released but no cert number assigned">— ⚠</span>'
+          : '—');
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="mono">${ts}</td>
@@ -248,7 +354,7 @@ function renderTable() {
       <td>${esc(r.adminPosition || '—')}</td>
       <td>${esc(r.lostCertificate || '—')}</td>
       <td>${esc(r.establishmentName || '—')}</td>
-      <td class="mono">${esc(r.healthCertNumber || '—')}</td>
+      <td class="mono">${certNumDisplay}</td>
       <td>${statusBadge}</td>
     `;
     tr.addEventListener('click', () => openModal(r._idx));
@@ -264,8 +370,6 @@ function esc(str) {
 function sortBy(col) {
   if (sortCol === col) sortDir *= -1;
   else { sortCol = col; sortDir = 1; }
-  document.querySelectorAll('th').forEach(th => th.classList.remove('sorted'));
-  document.querySelector(`th[data-col="${col}"]`)?.classList.add('sorted');
   renderTable();
 }
 
@@ -288,11 +392,9 @@ function openModal(idx) {
   document.getElementById('m_healthCertNumber').value     = r.healthCertNumber || '';
   document.getElementById('m_status').value               = r.status || 'Pending';
 
-  // Read-only client position display
   const clientPos = document.getElementById('m_clientPosition');
   if (clientPos) clientPos.textContent = r.position || '—';
 
-  // Admin position tag picker
   selectedAdminPosition = r.adminPosition || null;
   renderAdminPositionTags();
 
@@ -334,7 +436,7 @@ function addCustomPosition() {
   if (!adminPositionOptions.includes(val)) adminPositionOptions.push(val);
   selectedAdminPosition = val;
   input.value = '';
-  localStorage.setItem('adminPositionOptions', JSON.stringify(adminPositionOptions));
+  saveCustomPositionsRemote();
   renderAdminPositionTags();
 }
 
@@ -356,7 +458,6 @@ function saveRecord() {
   r.healthCertNumber       = document.getElementById('m_healthCertNumber').value.trim();
   r.status                 = document.getElementById('m_status').value;
   r.adminPosition          = selectedAdminPosition || '';
-  // r.position is NOT touched — it stays as the client submitted it
 
   pushRecordToSheets(r)
     .then(() => showToast('Record saved'))
@@ -394,14 +495,19 @@ function showToast(msg) {
 }
 
 // ─── EXPORT CSV ───────────────────────────────────────────────────────────
-function exportCSV() {
+// exportAll=true  → exports full dataset (all records)
+// exportAll=false → exports only the currently filtered/visible rows
+function exportCSV(exportAll = true) {
   const headers = [
     'Ref','Timestamp','Last Name','First Name','Middle Name','Gender',
     'Residential Address','Application Type','Health Cert Type','Lost Certificate',
     'Client Position','Admin Position','Establishment Name','Establishment Address',
     'Health Cert Number','Status'
   ];
-  const rows = records.map(r => [
+
+  const source = exportAll ? records : filteredCache;
+
+  const rows = source.map(r => [
     r.ref, r.timestamp, r.lastName, r.firstName, r.middleName, r.gender,
     r.residentialAddress, r.applicationType, r.healthCertificateType, r.lostCertificate,
     r.position, r.adminPosition, r.establishmentName, r.establishmentAddress,
@@ -413,20 +519,14 @@ function exportCSV() {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href = url;
-  a.download = 'attendance_' + new Date().toISOString().slice(0,10) + '.csv';
+  const suffix = exportAll ? 'all' : 'filtered';
+  a.download = `attendance_${suffix}_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
-  showToast('CSV exported');
+  showToast(exportAll ? 'Full CSV exported' : `Filtered CSV exported (${source.length} rows)`);
 }
 
 // ─── AUTH GUARD ───────────────────────────────────────────────────────────
-/*
-  TODO (PHP migration): replace with server-side session check
-  fetch('/api/auth.php').then(r=>r.json()).then(d=>{
-    if(!d.loggedIn) window.location.href='admin-login.html';
-    else document.getElementById('headerUser').textContent = d.username;
-  });
-*/
 function checkAuth() {
   const session = JSON.parse(localStorage.getItem('adminSession') || 'null');
   if (!session) {
@@ -448,11 +548,17 @@ function logout() {
   window.location.href = 'admin-login.html';
 }
 
+// ─── DATE RANGE CLEAR ────────────────────────────────────────────────────
+function clearDateRange() {
+  const from = document.getElementById('filterDateFrom');
+  const to   = document.getElementById('filterDateTo');
+  if (from) from.value = '';
+  if (to)   to.value   = '';
+  renderTable();
+}
+
 // ─── INIT ─────────────────────────────────────────────────────────────────
 checkAuth();
-
-const savedAdminPos = localStorage.getItem('adminPositionOptions');
-if (savedAdminPos) adminPositionOptions = JSON.parse(savedAdminPos);
-
-loadRecords();
+loadCustomPositionsRemote();
+loadRecords(true); // force full fetch on first load
 startPolling();
