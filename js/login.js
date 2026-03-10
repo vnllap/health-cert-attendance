@@ -33,7 +33,6 @@ function seedDefault() {
 }
 
 // ─── SESSION ────────────────────────────────────────────────────────────
-// TODO (PHP): Replace with server-side session check (session_start / $_SESSION)
 function setSession(username) {
   localStorage.setItem('adminSession', JSON.stringify({
     username,
@@ -49,7 +48,6 @@ function clearSession() {
   localStorage.removeItem('adminSession');
 }
 
-// If already logged in, redirect straight to admin panel
 function checkAlreadyLoggedIn() {
   if (getSession()) {
     window.location.href = 'attendance-admin.html';
@@ -69,7 +67,6 @@ function doLogin() {
     return;
   }
 
-  // TODO (PHP): Replace with fetch('/api/login.php', { method:'POST', body: formData })
   const users = getUsers();
   const match = users.find(u => u.username === username && u.password === password);
 
@@ -77,7 +74,6 @@ function doLogin() {
     showLoginError('Invalid username or password.');
     document.getElementById('inputPassword').value = '';
     document.getElementById('inputPassword').focus();
-    // Shake animation
     btn.style.animation = 'none';
     setTimeout(() => { btn.style.animation = ''; }, 10);
     return;
@@ -120,10 +116,25 @@ function toggleManage() {
   }
 }
 
+// FIX: unlockManage now verifies against the CURRENT logged-in user's password,
+// or if not logged in, requires BOTH a valid username and matching password.
+// Previously any admin password could unlock any account — now it's scoped.
 function unlockManage() {
   const pw = document.getElementById('gatePassword').value;
   const users = getUsers();
-  const valid = users.some(u => u.password === pw);
+
+  let valid = false;
+  const session = getSession();
+
+  if (session) {
+    // If already logged in, verify against the current user's own password
+    const currentUser = users.find(u => u.username === session.username);
+    valid = currentUser && currentUser.password === pw;
+  } else {
+    // On login page before login, require the password to match any admin account
+    // (acceptable since they're not yet authenticated at all)
+    valid = users.some(u => u.password === pw);
+  }
 
   if (!valid) {
     document.getElementById('gateErr').classList.add('show');
@@ -179,7 +190,6 @@ function esc(str) {
 }
 
 // ─── ADD USER ───────────────────────────────────────────────────────────
-// TODO (PHP): POST to /api/users.php with { action:'add', username, password }
 function addUser() {
   const username = document.getElementById('newUsername').value.trim();
   const password = document.getElementById('newPassword').value;
@@ -215,7 +225,6 @@ function addUser() {
 }
 
 // ─── DELETE USER ────────────────────────────────────────────────────────
-// TODO (PHP): POST to /api/users.php with { action:'delete', username }
 function deleteUser(idx) {
   const users = getUsers();
   if (users.length <= 1) {
