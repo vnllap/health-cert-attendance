@@ -526,6 +526,178 @@ function exportCSV(exportAll = true) {
   showToast(exportAll ? 'Full CSV exported' : `Filtered CSV exported (${source.length} rows)`);
 }
 
+// ─── MONTHLY REPORT ──────────────────────────────────────────────────────
+let reportData = []; // holds rows for the currently generated report (for CSV export)
+
+function openReport() {
+  // Default selectors to current month/year
+  const now = new Date();
+  document.getElementById('reportMonth').value = now.getMonth() + 1;
+  document.getElementById('reportYear').value  = now.getFullYear();
+
+  // Hide stale content
+  document.getElementById('reportStats').style.display    = 'none';
+  document.getElementById('reportTableWrap').style.display = 'none';
+  document.getElementById('reportEmpty').style.display    = 'none';
+  document.getElementById('reportExportBtn').style.display = 'none';
+  document.getElementById('reportSubtitle').textContent   = 'Select a month to generate a report';
+
+  document.getElementById('reportOverlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeReport() {
+  document.getElementById('reportOverlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function handleReportOverlayClick(e) {
+  if (e.target === document.getElementById('reportOverlay')) closeReport();
+}
+
+function generateReport() {
+  const month = parseInt(document.getElementById('reportMonth').value);
+  const year  = parseInt(document.getElementById('reportYear').value);
+
+  if (!year || year < 2020 || year > 2099) {
+    showToast('Please enter a valid year');
+    return;
+  }
+
+  const monthNames = ['January','February','March','April','May','June',
+                      'July','August','September','October','November','December'];
+  const monthStr   = String(month).padStart(2, '0');
+  const prefix     = `${year}-${monthStr}`;
+
+  // Filter records to this month
+  const monthRecords = records.filter(r => r.timestamp && r.timestamp.startsWith(prefix));
+  reportData = monthRecords;
+
+  document.getElementById('reportSubtitle').textContent =
+    `${monthNames[month - 1]} ${year}  ·  ${monthRecords.length} record${monthRecords.length !== 1 ? 's' : ''}`;
+
+  if (monthRecords.length === 0) {
+    document.getElementById('reportStats').style.display    = 'none';
+    document.getElementById('reportTableWrap').style.display = 'none';
+    document.getElementById('reportEmpty').style.display    = 'block';
+    document.getElementById('reportExportBtn').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('reportEmpty').style.display    = 'none';
+  document.getElementById('reportStats').style.display    = 'grid';
+  document.getElementById('reportTableWrap').style.display = 'block';
+  document.getElementById('reportExportBtn').style.display = 'flex';
+
+  // ── Summary stats ──
+  const total    = monthRecords.length;
+  const released = monthRecords.filter(r => r.status === 'Released').length;
+  const pending  = total - released;
+  const rate     = total > 0 ? Math.round((released / total) * 100) : 0;
+
+  document.getElementById('rTotalNum').textContent    = total;
+  document.getElementById('rReleasedNum').textContent = released;
+  document.getElementById('rPendingNum').textContent  = pending;
+  document.getElementById('rRateNum').textContent     = rate + '%';
+
+  // ── Helper: build breakdown by a field ──
+  function buildBreakdown(field) {
+    const map = {};
+    monthRecords.forEach(r => {
+      const key = r[field] || '(Unknown)';
+      if (!map[key]) map[key] = { total: 0, released: 0, pending: 0 };
+      map[key].total++;
+      if (r.status === 'Released') map[key].released++;
+      else map[key].pending++;
+    });
+    // Sort by total desc
+    return Object.entries(map).sort((a, b) => b[1].total - a[1].total);
+  }
+
+  // ── Helper: render breakdown rows into a tbody ──
+  function renderBreakdown(tbodyId, entries) {
+    const tbody = document.getElementById(tbodyId);
+    tbody.innerHTML = '';
+    entries.forEach(([label, d]) => {
+      const r = d.total > 0 ? Math.round((d.released / d.total) * 100) : 0;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${esc(label)}</td>
+        <td><strong>${d.total}</strong></td>
+        <td class="report-released">${d.released}</td>
+        <td class="report-pending">${d.pending}</td>
+        <td>
+          <div class="report-rate-wrap">
+            <div class="report-rate-bar"><div class="report-rate-fill" style="width:${r}%"></div></div>
+            <span>${r}%</span>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  renderBreakdown('reportCertBody',   buildBreakdown('healthCertificateType'));
+  renderBreakdown('reportAppBody',    buildBreakdown('applicationType'));
+  renderBreakdown('reportPosBody',    buildBreakdown('position'));
+  renderBreakdown('reportGenderBody', buildBreakdown('gender'));
+
+  // ── Weekly breakdown ──
+  // Divide month into 4 weeks (days 1–7, 8–14, 15–21, 22–end)
+  const weekBuckets = [
+    { label: `Week 1 (${monthNames[month-1]} 1–7)`,   days: [1,7]  },
+    { label: `Week 2 (${monthNames[month-1]} 8–14)`,  days: [8,14] },
+    { label: `Week 3 (${monthNames[month-1]} 15–21)`, days: [15,21]},
+    { label: `Week 4 (${monthNames[month-1]} 22–31)`, days: [22,31]},
+  ];
+
+  const weekEntries = weekBuckets.map(wb => {
+    const wRecords = monthRecords.filter(r => {
+      const d = new Date(r.timestamp).getDate();
+      return d >= wb.days[0] && d <= wb.days[1];
+    });
+    const wRel = wRecords.filter(r => r.status === 'Released').length;
+    return [wb.label, { total: wRecords.length, released: wRel, pending: wRecords.length - wRel }];
+  }).filter(([, d]) => d.total > 0);
+
+  renderBreakdown('reportWeekBody', weekEntries.length > 0 ? weekEntries :
+    [['No records', { total: 0, released: 0, pending: 0 }]]);
+}
+
+// ── Export the currently generated report as CSV ──
+function exportReportCSV() {
+  if (reportData.length === 0) return;
+
+  const month = parseInt(document.getElementById('reportMonth').value);
+  const year  = parseInt(document.getElementById('reportYear').value);
+  const monthNames = ['January','February','March','April','May','June',
+                      'July','August','September','October','November','December'];
+
+  const headers = [
+    'Ref','Timestamp','Last Name','First Name','Middle Name','Gender',
+    'Residential Address','Application Type','Health Cert Type','Lost Certificate',
+    'Client Position','Admin Position','Establishment Name','Establishment Address',
+    'Health Cert Number','Status'
+  ];
+
+  const rows = reportData.map(r => [
+    r.ref, r.timestamp, r.lastName, r.firstName, r.middleName, r.gender,
+    r.residentialAddress, r.applicationType, r.healthCertificateType, r.lostCertificate,
+    r.position, r.adminPosition, r.establishmentName, r.establishmentAddress,
+    r.healthCertNumber, r.status
+  ].map(v => `"${(v||'').toString().replace(/"/g,'""')}"`).join(','));
+
+  const csv  = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type:'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `report_${monthNames[month-1].toLowerCase()}_${year}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast(`Report exported — ${reportData.length} records`);
+}
+
 // ─── AUTH GUARD ───────────────────────────────────────────────────────────
 function checkAuth() {
   const session = JSON.parse(localStorage.getItem('adminSession') || 'null');
