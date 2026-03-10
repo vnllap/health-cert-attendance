@@ -649,6 +649,46 @@
     max-width: 780px;
   }
 
+  /* Mode toggle: Monthly / Daily */
+  .report-mode-toggle {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    align-self: flex-start;
+  }
+
+  .report-mode-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    background: var(--surface);
+    border: none;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--text-sub);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .report-mode-btn + .report-mode-btn {
+    border-left: 1px solid var(--border);
+  }
+
+  .report-mode-btn:hover {
+    background: var(--row-alt);
+    color: var(--text);
+  }
+
+  .report-mode-active {
+    background: var(--accent-light) !important;
+    color: var(--accent-mid) !important;
+    font-weight: 600 !important;
+  }
+
   .report-controls {
     display: flex;
     gap: 12px;
