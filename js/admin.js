@@ -527,21 +527,22 @@ function exportCSV(exportAll = true) {
 }
 
 // ─── MONTHLY REPORT ──────────────────────────────────────────────────────
-let reportData = []; // holds rows for the currently generated report (for CSV export)
+let reportData    = []; // rows for current report (for CSV export)
+let reportMode    = 'monthly'; // 'monthly' | 'daily'
+let reportExportLabel = ''; // filename label for CSV
+
+const MONTH_NAMES = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December'];
 
 function openReport() {
-  // Default selectors to current month/year
   const now = new Date();
   document.getElementById('reportMonth').value = now.getMonth() + 1;
   document.getElementById('reportYear').value  = now.getFullYear();
+  // Default date picker to today
+  document.getElementById('reportDate').value  = now.toISOString().slice(0, 10);
 
-  // Hide stale content
-  document.getElementById('reportStats').style.display    = 'none';
-  document.getElementById('reportTableWrap').style.display = 'none';
-  document.getElementById('reportEmpty').style.display    = 'none';
-  document.getElementById('reportExportBtn').style.display = 'none';
-  document.getElementById('reportSubtitle').textContent   = 'Select a month to generate a report';
-
+  _resetReportContent('Select a period to generate a report');
+  setReportMode(reportMode); // restore last-used mode
   document.getElementById('reportOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
 }
@@ -555,123 +556,215 @@ function handleReportOverlayClick(e) {
   if (e.target === document.getElementById('reportOverlay')) closeReport();
 }
 
-function generateReport() {
-  const month = parseInt(document.getElementById('reportMonth').value);
-  const year  = parseInt(document.getElementById('reportYear').value);
+function setReportMode(mode) {
+  reportMode = mode;
+  const isMonthly = mode === 'monthly';
 
-  if (!year || year < 2020 || year > 2099) {
-    showToast('Please enter a valid year');
+  document.getElementById('rModeMonthly').classList.toggle('report-mode-active', isMonthly);
+  document.getElementById('rModeDaily').classList.toggle('report-mode-active', !isMonthly);
+  document.getElementById('rControlsMonthly').style.display = isMonthly ? 'flex' : 'none';
+  document.getElementById('rControlsDaily').style.display   = isMonthly ? 'none' : 'flex';
+  document.getElementById('reportModalTitle').textContent   = isMonthly ? 'Monthly Report' : 'Daily Report';
+
+  _resetReportContent('Select a period to generate a report');
+}
+
+function _resetReportContent(subtitle) {
+  document.getElementById('reportSubtitle').textContent    = subtitle;
+  document.getElementById('reportStats').style.display     = 'none';
+  document.getElementById('reportTableWrap').style.display = 'none';
+  document.getElementById('reportEmpty').style.display     = 'none';
+  document.getElementById('reportExportBtn').style.display = 'none';
+}
+
+// ── Shared helpers ────────────────────────────────────────────────────────
+function _buildBreakdown(sourceRecords, field) {
+  const map = {};
+  sourceRecords.forEach(r => {
+    const key = r[field] || '(Unknown)';
+    if (!map[key]) map[key] = { total: 0, released: 0, pending: 0 };
+    map[key].total++;
+    if (r.status === 'Released') map[key].released++;
+    else map[key].pending++;
+  });
+  return Object.entries(map).sort((a, b) => b[1].total - a[1].total);
+}
+
+function _renderBreakdown(tbodyId, entries) {
+  const tbody = document.getElementById(tbodyId);
+  tbody.innerHTML = '';
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-sub);padding:12px;">No data</td></tr>';
     return;
   }
+  entries.forEach(([label, d]) => {
+    const r = d.total > 0 ? Math.round((d.released / d.total) * 100) : 0;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${esc(label)}</td>
+      <td><strong>${d.total}</strong></td>
+      <td class="report-released">${d.released}</td>
+      <td class="report-pending">${d.pending}</td>
+      <td>
+        <div class="report-rate-wrap">
+          <div class="report-rate-bar"><div class="report-rate-fill" style="width:${r}%"></div></div>
+          <span>${r}%</span>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
 
-  const monthNames = ['January','February','March','April','May','June',
-                      'July','August','September','October','November','December'];
-  const monthStr   = String(month).padStart(2, '0');
-  const prefix     = `${year}-${monthStr}`;
-
-  // Filter records to this month
-  const monthRecords = records.filter(r => r.timestamp && r.timestamp.startsWith(prefix));
-  reportData = monthRecords;
-
-  document.getElementById('reportSubtitle').textContent =
-    `${monthNames[month - 1]} ${year}  ·  ${monthRecords.length} record${monthRecords.length !== 1 ? 's' : ''}`;
-
-  if (monthRecords.length === 0) {
-    document.getElementById('reportStats').style.display    = 'none';
-    document.getElementById('reportTableWrap').style.display = 'none';
-    document.getElementById('reportEmpty').style.display    = 'block';
-    document.getElementById('reportExportBtn').style.display = 'none';
-    return;
-  }
-
-  document.getElementById('reportEmpty').style.display    = 'none';
-  document.getElementById('reportStats').style.display    = 'grid';
-  document.getElementById('reportTableWrap').style.display = 'block';
-  document.getElementById('reportExportBtn').style.display = 'flex';
-
-  // ── Summary stats ──
-  const total    = monthRecords.length;
-  const released = monthRecords.filter(r => r.status === 'Released').length;
+function _renderSummaryStats(sourceRecords) {
+  const total    = sourceRecords.length;
+  const released = sourceRecords.filter(r => r.status === 'Released').length;
   const pending  = total - released;
   const rate     = total > 0 ? Math.round((released / total) * 100) : 0;
-
   document.getElementById('rTotalNum').textContent    = total;
   document.getElementById('rReleasedNum').textContent = released;
   document.getElementById('rPendingNum').textContent  = pending;
   document.getElementById('rRateNum').textContent     = rate + '%';
-
-  // ── Helper: build breakdown by a field ──
-  function buildBreakdown(field) {
-    const map = {};
-    monthRecords.forEach(r => {
-      const key = r[field] || '(Unknown)';
-      if (!map[key]) map[key] = { total: 0, released: 0, pending: 0 };
-      map[key].total++;
-      if (r.status === 'Released') map[key].released++;
-      else map[key].pending++;
-    });
-    // Sort by total desc
-    return Object.entries(map).sort((a, b) => b[1].total - a[1].total);
-  }
-
-  // ── Helper: render breakdown rows into a tbody ──
-  function renderBreakdown(tbodyId, entries) {
-    const tbody = document.getElementById(tbodyId);
-    tbody.innerHTML = '';
-    entries.forEach(([label, d]) => {
-      const r = d.total > 0 ? Math.round((d.released / d.total) * 100) : 0;
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${esc(label)}</td>
-        <td><strong>${d.total}</strong></td>
-        <td class="report-released">${d.released}</td>
-        <td class="report-pending">${d.pending}</td>
-        <td>
-          <div class="report-rate-wrap">
-            <div class="report-rate-bar"><div class="report-rate-fill" style="width:${r}%"></div></div>
-            <span>${r}%</span>
-          </div>
-        </td>
-      `;
-      tbody.appendChild(tr);
-    });
-  }
-
-  renderBreakdown('reportCertBody',   buildBreakdown('healthCertificateType'));
-  renderBreakdown('reportAppBody',    buildBreakdown('applicationType'));
-  renderBreakdown('reportPosBody',    buildBreakdown('position'));
-  renderBreakdown('reportGenderBody', buildBreakdown('gender'));
-
-  // ── Weekly breakdown ──
-  // Divide month into 4 weeks (days 1–7, 8–14, 15–21, 22–end)
-  const weekBuckets = [
-    { label: `Week 1 (${monthNames[month-1]} 1–7)`,   days: [1,7]  },
-    { label: `Week 2 (${monthNames[month-1]} 8–14)`,  days: [8,14] },
-    { label: `Week 3 (${monthNames[month-1]} 15–21)`, days: [15,21]},
-    { label: `Week 4 (${monthNames[month-1]} 22–31)`, days: [22,31]},
-  ];
-
-  const weekEntries = weekBuckets.map(wb => {
-    const wRecords = monthRecords.filter(r => {
-      const d = new Date(r.timestamp).getDate();
-      return d >= wb.days[0] && d <= wb.days[1];
-    });
-    const wRel = wRecords.filter(r => r.status === 'Released').length;
-    return [wb.label, { total: wRecords.length, released: wRel, pending: wRecords.length - wRel }];
-  }).filter(([, d]) => d.total > 0);
-
-  renderBreakdown('reportWeekBody', weekEntries.length > 0 ? weekEntries :
-    [['No records', { total: 0, released: 0, pending: 0 }]]);
+  document.getElementById('reportStats').style.display = 'grid';
 }
 
-// ── Export the currently generated report as CSV ──
-function exportReportCSV() {
-  if (reportData.length === 0) return;
+function _renderSharedBreakdowns(sourceRecords) {
+  _renderBreakdown('reportCertBody',   _buildBreakdown(sourceRecords, 'healthCertificateType'));
+  _renderBreakdown('reportAppBody',    _buildBreakdown(sourceRecords, 'applicationType'));
+  _renderBreakdown('reportPosBody',    _buildBreakdown(sourceRecords, 'position'));
+  _renderBreakdown('reportGenderBody', _buildBreakdown(sourceRecords, 'gender'));
+}
 
+function _showReportContent() {
+  document.getElementById('reportTableWrap').style.display  = 'block';
+  document.getElementById('reportEmpty').style.display      = 'none';
+  document.getElementById('reportExportBtn').style.display  = 'flex';
+}
+
+function _showReportEmpty() {
+  document.getElementById('reportStats').style.display      = 'none';
+  document.getElementById('reportTableWrap').style.display  = 'none';
+  document.getElementById('reportEmpty').style.display      = 'block';
+  document.getElementById('reportExportBtn').style.display  = 'none';
+}
+
+// ── MONTHLY REPORT ────────────────────────────────────────────────────────
+function generateReport() {
   const month = parseInt(document.getElementById('reportMonth').value);
   const year  = parseInt(document.getElementById('reportYear').value);
-  const monthNames = ['January','February','March','April','May','June',
-                      'July','August','September','October','November','December'];
+
+  if (!year || year < 2020 || year > 2099) { showToast('Please enter a valid year'); return; }
+
+  const monthStr = String(month).padStart(2, '0');
+  const prefix   = `${year}-${monthStr}`;
+  const src      = records.filter(r => r.timestamp && r.timestamp.startsWith(prefix));
+
+  reportData        = src;
+  reportExportLabel = `${MONTH_NAMES[month - 1].toLowerCase()}_${year}`;
+
+  document.getElementById('reportSubtitle').textContent =
+    `${MONTH_NAMES[month - 1]} ${year}  ·  ${src.length} record${src.length !== 1 ? 's' : ''}`;
+
+  if (src.length === 0) { _showReportEmpty(); return; }
+
+  _renderSummaryStats(src);
+  _renderSharedBreakdowns(src);
+
+  // Show weekly section, hide hourly + list (monthly-only sections)
+  document.getElementById('reportWeekSection').style.display = 'block';
+  document.getElementById('reportHourSection').style.display = 'none';
+  document.getElementById('reportListSection').style.display = 'none';
+
+  // Weekly breakdown — days 1–7, 8–14, 15–21, 22–end
+  const weekBuckets = [
+    { label: `Week 1 (${MONTH_NAMES[month-1]} 1–7)`,   days: [1,7]   },
+    { label: `Week 2 (${MONTH_NAMES[month-1]} 8–14)`,  days: [8,14]  },
+    { label: `Week 3 (${MONTH_NAMES[month-1]} 15–21)`, days: [15,21] },
+    { label: `Week 4 (${MONTH_NAMES[month-1]} 22–31)`, days: [22,31] },
+  ];
+  const weekEntries = weekBuckets.map(wb => {
+    const wr  = src.filter(r => { const d = new Date(r.timestamp).getDate(); return d >= wb.days[0] && d <= wb.days[1]; });
+    const rel = wr.filter(r => r.status === 'Released').length;
+    return [wb.label, { total: wr.length, released: rel, pending: wr.length - rel }];
+  }).filter(([, d]) => d.total > 0);
+
+  _renderBreakdown('reportWeekBody', weekEntries);
+  _showReportContent();
+}
+
+// ── DAILY REPORT ─────────────────────────────────────────────────────────
+function generateDailyReport() {
+  const dateVal = document.getElementById('reportDate').value;
+  if (!dateVal) { showToast('Please select a date'); return; }
+
+  const src = records.filter(r => r.timestamp && r.timestamp.startsWith(dateVal));
+
+  reportData        = src;
+  reportExportLabel = `daily_${dateVal}`;
+
+  // Format date nicely for subtitle
+  const [y, m, d] = dateVal.split('-').map(Number);
+  const label = `${MONTH_NAMES[m - 1]} ${d}, ${y}`;
+  document.getElementById('reportSubtitle').textContent =
+    `${label}  ·  ${src.length} record${src.length !== 1 ? 's' : ''}`;
+
+  if (src.length === 0) { _showReportEmpty(); return; }
+
+  _renderSummaryStats(src);
+  _renderSharedBreakdowns(src);
+
+  // Show hourly + list, hide weekly (daily-only sections)
+  document.getElementById('reportWeekSection').style.display = 'none';
+  document.getElementById('reportHourSection').style.display = 'block';
+  document.getElementById('reportListSection').style.display = 'block';
+
+  // Hourly breakdown — group by hour of submission
+  const hourMap = {};
+  src.forEach(r => {
+    const hr = new Date(r.timestamp).getHours();
+    const hrLabel = `${String(hr).padStart(2,'0')}:00 – ${String(hr).padStart(2,'0')}:59`;
+    if (!hourMap[hrLabel]) hourMap[hrLabel] = { total: 0, released: 0, pending: 0, _hr: hr };
+    hourMap[hrLabel].total++;
+    if (r.status === 'Released') hourMap[hrLabel].released++;
+    else hourMap[hrLabel].pending++;
+  });
+  const hourEntries = Object.entries(hourMap).sort((a, b) => a[1]._hr - b[1]._hr);
+  _renderBreakdown('reportHourBody', hourEntries);
+
+  // Full applicant list for the day, sorted by timestamp
+  const sorted = [...src].sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+  const listBody = document.getElementById('reportListBody');
+  listBody.innerHTML = '';
+  sorted.forEach((r, i) => {
+    const name = [r.lastName, r.firstName, r.middleName].filter(Boolean).join(', ');
+    const time = r.timestamp
+      ? new Date(r.timestamp).toLocaleTimeString('en-PH', { hour:'2-digit', minute:'2-digit' })
+      : '—';
+    const statusCell = r.status === 'Released'
+      ? `<span class="badge badge-released" style="font-size:11px;padding:2px 8px;"><span class="badge-dot"></span>Released</span>`
+      : `<span class="badge badge-pending"  style="font-size:11px;padding:2px 8px;"><span class="badge-dot"></span>Pending</span>`;
+    const certWarn = !r.healthCertNumber && r.status === 'Released'
+      ? ' <span class="missing-cert" title="No cert # assigned">⚠</span>' : '';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="mono" style="color:var(--text-sub);font-size:11.5px;">${i + 1}&nbsp; <span style="font-weight:400;">${time}</span></td>
+      <td><strong>${esc(name || '—')}</strong></td>
+      <td>${esc(r.healthCertificateType || '—')}</td>
+      <td>${esc(r.applicationType || '—')}</td>
+      <td>${esc(r.position || '—')}</td>
+      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;">${esc(r.establishmentName || '—')}</td>
+      <td class="mono" style="font-size:12px;">${esc(r.healthCertNumber || '—')}${certWarn}</td>
+      <td>${statusCell}</td>
+    `;
+    listBody.appendChild(tr);
+  });
+
+  _showReportContent();
+}
+
+// ── Export the currently generated report as CSV ──────────────────────────
+function exportReportCSV() {
+  if (reportData.length === 0) return;
 
   const headers = [
     'Ref','Timestamp','Last Name','First Name','Middle Name','Gender',
@@ -679,7 +772,6 @@ function exportReportCSV() {
     'Client Position','Admin Position','Establishment Name','Establishment Address',
     'Health Cert Number','Status'
   ];
-
   const rows = reportData.map(r => [
     r.ref, r.timestamp, r.lastName, r.firstName, r.middleName, r.gender,
     r.residentialAddress, r.applicationType, r.healthCertificateType, r.lostCertificate,
@@ -692,7 +784,7 @@ function exportReportCSV() {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href = url;
-  a.download = `report_${monthNames[month-1].toLowerCase()}_${year}.csv`;
+  a.download = `report_${reportExportLabel}.csv`;
   a.click();
   URL.revokeObjectURL(url);
   showToast(`Report exported — ${reportData.length} records`);
