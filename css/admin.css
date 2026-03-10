@@ -644,6 +644,150 @@
     .export-split .export-main { display: none; }
   }
 
+  /* ── REPORT MODAL ── */
+  .report-modal {
+    max-width: 780px;
+  }
+
+  .report-controls {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+  }
+
+  /* Summary stat cards */
+  .report-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+
+  .rstat {
+    background: var(--row-alt);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    text-align: center;
+  }
+
+  .rstat-num {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-bottom: 4px;
+  }
+
+  .rstat-label {
+    font-size: 11.5px;
+    color: var(--text-sub);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+
+  .rstat-total    { border-top: 3px solid var(--accent-mid); }
+  .rstat-released { border-top: 3px solid var(--success); }
+  .rstat-pending  { border-top: 3px solid var(--warn); }
+  .rstat-rate     { border-top: 3px solid #8b5cf6; }
+
+  .rstat-total    .rstat-num { color: var(--accent-mid); }
+  .rstat-released .rstat-num { color: var(--success); }
+  .rstat-pending  .rstat-num { color: var(--warn); }
+  .rstat-rate     .rstat-num { color: #8b5cf6; }
+
+  /* Section label inside report */
+  .report-section-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    color: var(--text-sub);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+
+  /* Report breakdown table */
+  .report-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .report-table thead {
+    background: #f1f5f9;
+    border-bottom: 2px solid var(--border);
+    position: static; /* not sticky inside scrollable modal */
+  }
+
+  .report-table th {
+    padding: 9px 12px;
+    text-align: left;
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-sub);
+    cursor: default;
+    user-select: none;
+  }
+
+  .report-table tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+    cursor: default;
+  }
+  .report-table tbody tr:last-child { border-bottom: none; }
+  .report-table tbody tr:hover { background: var(--row-hover); }
+  .report-table tbody tr:nth-child(even) { background: var(--row-alt); }
+  .report-table tbody tr:nth-child(even):hover { background: var(--row-hover); }
+
+  .report-table td {
+    padding: 9px 12px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  .report-released { color: var(--success); font-weight: 500; }
+  .report-pending  { color: var(--warn);    font-weight: 500; }
+
+  /* Progress bar for release rate */
+  .report-rate-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .report-rate-bar {
+    flex: 1;
+    height: 6px;
+    background: #e5e7eb;
+    border-radius: 3px;
+    overflow: hidden;
+    min-width: 60px;
+  }
+
+  .report-rate-fill {
+    height: 100%;
+    background: var(--accent-mid);
+    border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+
+  .report-rate-wrap span {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-label);
+    min-width: 34px;
+    text-align: right;
+  }
+
+  @media (max-width: 640px) {
+    .report-stats { grid-template-columns: repeat(2, 1fr); }
+    .report-controls { flex-wrap: wrap; }
+  }
+
   /* ── VIEW TOGGLE ── */
   .view-toggle-group {
     display: flex;
