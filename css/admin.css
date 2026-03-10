@@ -92,6 +92,57 @@
   }
   .btn-white:hover { background: #f0f6ff; }
 
+  /* ── SPLIT EXPORT BUTTON ── */
+  .export-split {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+
+  .export-main {
+    border-radius: 7px 0 0 7px !important;
+    border-right: 1px solid rgba(255,255,255,0.25) !important;
+  }
+
+  .export-caret {
+    border-radius: 0 7px 7px 0 !important;
+    padding: 7px 10px !important;
+    font-size: 11px !important;
+  }
+
+  .export-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+    z-index: 300;
+    min-width: 180px;
+    overflow: hidden;
+  }
+
+  .export-menu.open { display: block; }
+
+  .export-menu button {
+    display: block;
+    width: 100%;
+    padding: 10px 16px;
+    text-align: left;
+    background: none;
+    border: none;
+    font-size: 13px;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--text-label);
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .export-menu button:hover { background: var(--row-alt); }
+  .export-menu button + button { border-top: 1px solid var(--border); }
+
   /* ── TOOLBAR ── */
   .toolbar {
     background: var(--surface);
@@ -101,6 +152,22 @@
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
+  }
+
+  /* Date range toolbar row — slightly more compact */
+  .toolbar-daterange {
+    padding-top: 8px;
+    padding-bottom: 8px;
+    background: #fafbfc;
+    border-bottom: 1px solid var(--border);
+    gap: 8px;
+  }
+
+  .date-input {
+    padding: 7px 10px !important;
+    font-size: 12.5px !important;
+    max-width: 148px;
+    cursor: pointer;
   }
 
   .search-wrap {
@@ -150,6 +217,12 @@
     background-position: right 10px center;
   }
   .filter-select:focus { border-color: var(--border-focus); }
+
+  /* Date inputs don't need the custom dropdown arrow */
+  input[type="date"].filter-select {
+    background-image: none;
+    padding-right: 10px;
+  }
 
   .toolbar-count {
     margin-left: auto;
@@ -229,6 +302,14 @@
     font-family: 'DM Mono', monospace;
     font-size: 12px;
     color: var(--text-sub);
+  }
+
+  /* ── MISSING CERT WARNING ── */
+  .missing-cert {
+    color: var(--warn);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    cursor: help;
   }
 
   .badge {
@@ -378,7 +459,6 @@
 
   .mfield textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
 
-  /* custom position section */
   .position-tags {
     display: flex;
     flex-wrap: wrap;
@@ -554,11 +634,14 @@
   /* RESPONSIVE */
   @media (max-width: 640px) {
     .toolbar { padding: 10px 14px; }
+    .toolbar-daterange { gap: 6px; }
+    .date-input { max-width: 130px; }
     .table-wrap { margin: 12px 10px; }
     .modal-cols-3 { grid-template-columns: 1fr; }
     .modal-cols-2 { grid-template-columns: 1fr; }
     .modal-span-2 { grid-column: span 1; }
     .header { padding: 0 14px; }
+    .export-split .export-main { display: none; }
   }
 
   /* ── VIEW TOGGLE ── */
